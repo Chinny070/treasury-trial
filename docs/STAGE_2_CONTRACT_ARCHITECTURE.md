@@ -38,6 +38,8 @@ The organising principle from Stage 1 holds throughout: **deterministic accounti
 | **Pure ASCII source**, comments included | A single non-ASCII byte makes Studio's `gen_getContractSchemaForCode` fail with `VM_ERROR: invalid_contract` | `test_contract_source_is_pure_ascii`, `test_no_typographic_characters_slip_in`, `test_contract_source_has_no_crlf_or_bom` |
 | `def __init__(self):` with no return annotation | `-> None` breaks Studio schema extraction | `test_init_has_no_return_annotation` |
 | **One** `emit_transfer` call site, behind one parameterized payout method | A contract with separate refund and slash payout methods failed to load its schema; the same logic behind one method loaded and worked live | `test_exactly_one_emit_transfer_call_site`, `test_no_separate_refund_and_slash_methods` |
+| **`__init__` is the only dunder** | `__on_errored_message__` broke schema extraction. Every contract of the user's that deploys - Foresign, Continuum, SeedWager - has `__init__` alone. | `test_init_is_the_only_dunder_method` |
+| **Only `str` or no annotation** on method params and returns | Foresign, which deploys, uses nothing else. Treasury Trial's one `bool` parameter and one `-> int` return were removed while making it loadable. | `test_only_str_annotations_are_used` |
 | Outbound transfer is a **separate emitted transaction** | Observed on StudioNet (Stage 1 section 16). Settlement never assumes value moved in the calling transaction. | payout design, section 7 |
 
 The CRLF guard is not theoretical: it caught a real regression during Stage 2 when a scripted edit rewrote the contract with Windows line endings.
@@ -118,9 +120,8 @@ At most **one active case per DAO**. The slot frees on finalization or withdrawa
 ```
 NONE --lock_bond (payable)--> LOCKED
   --finalize_case--> REFUNDABLE | SLASHABLE
-    --execute_payout--> PAYOUT_PENDING
+    --execute_payout--> PAYOUT_PENDING     (emitted, not proven delivered)
       --confirm_payout--> REFUNDED | SLASHED
-      --__on_errored_message__--> back to REFUNDABLE | SLASHABLE (retryable)
 ```
 
 ### 7.1 Locking
@@ -147,16 +148,24 @@ Status flips to `PAYOUT_PENDING` **before** the transfer is emitted, so a second
 
 ### 7.4 Failed outbound transfer
 
-This was Stage 1's open item **G**. The design:
+This was Stage 1's open item **G**, and it is **not solved**. What follows is the safest design available under a hard constraint.
 
-- **No blind retry.** Without a failure signal the contract cannot distinguish "not delivered" from "delivered", and a caller-driven retry would risk paying twice. `execute_payout` refuses while a payout is in flight.
-- **`__on_errored_message__`** is the only thing that reopens a payout. It rolls the in-flight case back to `REFUNDABLE`/`SLASHABLE`, increments `failed_attempts`, and preserves the exact amount and recipient. It identifies the case through `config["payout_in_flight"]`, set immediately before the emit.
-- **A completed payout is never reopened.** The hook returns early unless the status is exactly `PAYOUT_PENDING`. That is the guard against paying a confirmed transfer twice.
-- **`confirm_payout(case_id)`** books an emitted payout as final once `PAYOUT_CONFIRM_DELAY` (1 hour) has passed with no failure reported. It moves nothing and emits nothing - purely bookkeeping - so it can never cause a second transfer. Callable by anyone.
+**The constraint.** An earlier revision reopened a failed payout from an `__on_errored_message__` hook. Studio could not extract the contract schema with that dunder present. Diffing against the user's contracts that do deploy - Foresign, Continuum, SeedWager - every one of them carries `__init__` as its **only** dunder. The hook was removed to make the contract deployable.
 
-> **Known limitation, stated plainly.** The verified runtime gives the contract no positive success signal for an emitted transfer. Finality in `confirm_payout` is therefore *time-based*: the transfer was emitted, and no `__on_errored_message__` arrived within the delay. **The timing and delivery guarantees of that callback are not live-verified** (Stage 1 item G is still open). If the callback can arrive later than `PAYOUT_CONFIRM_DELAY`, a failed transfer could be booked as complete and the bond stranded in the contract. This must be verified on StudioNet before the protocol carries meaningful value. It is the single largest open risk in Stage 2.
+**The consequence.** The runtime gives the contract no positive success signal for an emitted transfer, and the failure callback is unusable. `execute_payout` therefore cannot know whether the GEN arrived.
+
+**The design:**
+
+- **No automatic retry, and no blind retry.** `execute_payout` refuses while a payout is in flight. Without a failure signal the contract cannot distinguish "not delivered" from "delivered", and a caller-driven retry would risk paying twice.
+- **A stalled payout preserves everything.** `PAYOUT_PENDING` keeps the exact amount, recipient, disposition and emission time. Nothing is lost; the entitlement simply is not yet booked.
+- **Confirmation is separate, permissionless, and withholdable.** `confirm_payout(case_id)` books finality after `PAYOUT_CONFIRM_DELAY`. It moves nothing and emits nothing, so it can never cause a second transfer - and it can simply be *withheld* when the outbound transfer was not observed to succeed.
+- **A completed payout is terminal.** No method reopens `REFUNDED`/`SLASHED`.
+
+> **Known limitation, stated plainly.** If an outbound transfer fails and `confirm_payout` is called anyway, the case is booked complete while the GEN is still held by the contract. There is no in-contract recovery path. Detection is off-chain: compare the contract's on-chain balance against the sum of settlements not yet confirmed. **Do not confirm a payout whose transfer you have not seen succeed on the explorer.**
 >
-> What is *not* at risk: double payment. That is blocked by the status guard regardless of callback timing.
+> Resolving this properly needs either a Studio-loadable failure callback or a verified balance accessor. Neither exists today. This is the largest outstanding risk in the protocol.
+>
+> What is **not** at risk: double payment. The status guard blocks it regardless.
 
 ---
 
@@ -351,7 +360,7 @@ From Stage 1 section 16, verified live on StudioNet by the user, Claude broadcas
 
 ## 18. Known limitations
 
-1. **`__on_errored_message__` is not live-verified** (Stage 1 item G). The retry path and the time-based `confirm_payout` finality both depend on its delivery behavior. Highest-priority item before real value. Double payment is *not* at risk.
+1. **Failed outbound transfers have no in-contract recovery** (Stage 1 item G, still open). `__on_errored_message__` cannot be used - it breaks Studio schema extraction - so a failed transfer leaves the case at `PAYOUT_PENDING` with the GEN held by the contract, and confirming it anyway books it complete incorrectly. Detection is off-chain. Highest-priority item before real value. Double payment is *not* at risk. See section 7.4.
 2. **`policy_hash` is a 64-bit FNV-1a fingerprint**, not a cryptographic commitment (section 9).
 3. **Local test runner diverges from Studio.** gltest's direct runner extracts py-lib-genlayer-std **v0.3.0-rc7**, which exposes `gl.nondet.web` and has **no `gl.get_webpage`**; the pinned Studio runner has `gl.get_webpage` (used by the user's deployed Contradiction Protocol). Production code keeps the Studio-verified API and the harness shims it. **The contract's schema has not been loaded in Studio yet** - that is a Stage 3 first step.
 4. **Direct-mode harness cannot move real value.** `emit_transfer` surfaces as an `EthSend` request with no balance effect, so tests assert emitted recipient/amount, not balances. Real movement was proven live in Stage 1.

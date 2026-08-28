@@ -215,3 +215,41 @@ def test_deterministic_decide_is_module_level_and_pure():
             assert "self." not in body
             return
     raise AssertionError("_decide not found")
+
+
+def test_init_is_the_only_dunder_method():
+    """
+    No dunder other than __init__ on the contract class.
+
+    An earlier revision carried an `__on_errored_message__` hook to reopen
+    failed payouts. Studio could not extract the contract schema with it
+    present, and no contract in this codebase that loads carries any dunder
+    besides __init__ - Foresign, Continuum and SeedWager all agree. Removing
+    it was what made the production contract deployable.
+    """
+    dunders = [
+        node.name
+        for node in _contract_class(PRODUCTION).body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("__")
+    ]
+    assert dunders == ["__init__"]
+
+
+def test_only_str_annotations_are_used():
+    """
+    Match the annotation vocabulary of the contracts that actually deploy.
+
+    Foresign, which deploys, annotates method parameters and returns with
+    `str` or not at all - never `bool`, `int` or anything else. Treasury Trial
+    originally used one `bool` parameter and one `-> int` return; both were
+    removed while making the contract loadable, and both are kept out here.
+    """
+    allowed = {"str", None}
+    for node in _contract_class(PRODUCTION).body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        returns = ast.unparse(node.returns) if node.returns else None
+        assert returns in allowed, node.name + " returns " + str(returns)
+        for arg in node.args.args[1:]:
+            annotation = ast.unparse(arg.annotation) if arg.annotation else None
+            assert annotation in allowed, node.name + " takes " + str(annotation)

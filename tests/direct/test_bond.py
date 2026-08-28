@@ -288,75 +288,70 @@ def test_emitted_transfer_does_not_book_as_complete(env):
     assert state["emitted_at"] > 0
 
 
-def test_retry_after_reported_failure_succeeds(env):
+def test_no_caller_driven_retry_while_in_flight(env):
     """
-    The only thing that reopens a payout is the runtime reporting failure.
+    There is deliberately no blind retry.
 
-    There is deliberately no caller-driven blind retry: without a failure
-    signal the contract cannot distinguish "not delivered" from "delivered",
-    and a blind retry would risk paying twice.
+    Without a failure signal the contract cannot distinguish "not delivered"
+    from "delivered", so a caller-driven retry would risk paying twice. A
+    payout in flight is therefore refused outright.
     """
     vm, c, transfers = env
     case_id = _settled(c, vm, "ACCEPT")
     c.execute_payout(case_id)
     assert len(transfers.sent) == 1
-
-    with reverts("already in flight"):
-        c.execute_payout(case_id)
+    for _ in range(3):
+        with reverts("already in flight"):
+            c.execute_payout(case_id)
     assert len(transfers.sent) == 1
 
-    c.__on_errored_message__()
-    assert bond_of(c, case_id)["bond_status"] == "REFUNDABLE"
 
-    c.execute_payout(case_id)
-    assert len(transfers.sent) == 2
-    assert transfers.last()["value"] == BOND
-    assert transfers.recipient_matches(PROPOSER_HEX)
-    assert bond_of(c, case_id)["failed_attempts"] == 1
-
-
-def test_errored_message_hook_reopens_only_in_flight_payouts(env):
-    vm, c, _ = env
+def test_stalled_payout_preserves_the_entitlement(env):
+    """
+    A payout that is emitted but never confirmed keeps everything needed to
+    recover it: status, exact amount, recipient and disposition all survive,
+    and the case can never be settled a second time.
+    """
+    vm, c, transfers = env
     case_id = _settled(c, vm, "ACCEPT")
+    before = bond_of(c, case_id)
     c.execute_payout(case_id)
-    assert bond_of(c, case_id)["bond_status"] == "PAYOUT_PENDING"
-    c.__on_errored_message__()
     state = bond_of(c, case_id)
-    assert state["bond_status"] == "REFUNDABLE"
-    assert state["failed_attempts"] == 1
-    assert state["last_error"] == "OUTBOUND_TRANSFER_FAILED"
-    assert state["amount"] == str(BOND)
-    assert state["recipient"] == checksum(PROPOSER_HEX)
+    assert state["bond_status"] == "PAYOUT_PENDING"
+    assert state["amount"] == before["amount"]
+    assert state["recipient"] == before["recipient"]
+    assert state["disposition"] == "REFUND"
+    assert state["emitted_at"] > 0
+    # Nothing books it as complete on its own.
+    with reverts("confirmation delay has not elapsed"):
+        c.confirm_payout(case_id)
+    assert bond_of(c, case_id)["bond_status"] == "PAYOUT_PENDING"
 
 
-def test_errored_message_hook_never_reopens_a_completed_payout(env):
-    """This is the guard that stops a confirmed transfer being paid twice."""
+def test_confirmation_is_a_separate_withholdable_step(env):
+    """
+    Confirmation is permissionless and separate precisely so it can be
+    withheld when the outbound transfer was not observed to succeed.
+    """
     vm, c, transfers = env
     case_id = _settled(c, vm, "ACCEPT")
     c.execute_payout(case_id)
     warp_to(vm, bond_of(c, case_id)["emitted_at"] + CONFIRM_DELAY + 1)
-    c.confirm_payout(case_id)
-    c.__on_errored_message__()
-    assert bond_of(c, case_id)["bond_status"] == "REFUNDED"
-    with reverts("already completed"):
-        c.execute_payout(case_id)
+    vm.sender = OUTSIDER
+    assert c.confirm_payout(case_id) == "REFUNDED"
     assert len(transfers.sent) == 1
 
 
-def test_errored_message_hook_is_safe_with_nothing_in_flight(env):
+def test_no_method_can_reopen_a_settled_payout(env):
     vm, c, _ = env
     case_id = _settled(c, vm, "ACCEPT")
-    c.__on_errored_message__()
-    assert bond_of(c, case_id)["bond_status"] == "REFUNDABLE"
-
-
-def test_slash_failure_rolls_back_to_slashable(env):
-    vm, c, _ = env
-    case_id = _settled(c, vm, "REJECT")
     c.execute_payout(case_id)
-    c.__on_errored_message__()
-    assert bond_of(c, case_id)["bond_status"] == "SLASHABLE"
-    assert bond_of(c, case_id)["recipient"] == checksum(TREASURY_HEX)
+    warp_to(vm, bond_of(c, case_id)["emitted_at"] + CONFIRM_DELAY + 1)
+    c.confirm_payout(case_id)
+    for forbidden in ["reopen_payout", "retry_payout", "reset_payout", "cancel_payout"]:
+        assert forbidden not in dir(c)
+    with reverts("already completed"):
+        c.execute_payout(case_id)
 
 
 def test_no_semantic_re_settlement_after_disposition(env):
@@ -364,7 +359,6 @@ def test_no_semantic_re_settlement_after_disposition(env):
     vm, c, _ = env
     case_id = _settled(c, vm, "ACCEPT")
     c.execute_payout(case_id)
-    c.__on_errored_message__()
     with reverts("not awaiting finalization"):
         c.finalize_case(case_id)
     assert case_of(c, case_id)["final_decision"] == "ACCEPTED"

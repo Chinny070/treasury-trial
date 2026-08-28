@@ -147,20 +147,22 @@ slash (REJECTED), confirming the slash lands at the frozen treasury address and
 
 ## 9. Open item G - failed outbound transfer
 
-This is the Stage 2 known limitation and the highest-priority unknown.
+Still open, and now harder: `__on_errored_message__` cannot be used at all
+because that dunder breaks Studio schema extraction. There is no in-contract
+recovery path for a failed transfer.
 
 - [ ] Settle a case, then `execute_payout` to a recipient that should cause the
       transfer to fail (for example a contract that rejects value - construct
       one deliberately as a probe, never as production code).
-- [ ] Observe whether `__on_errored_message__` fires at all.
-- [ ] If it fires: confirm `get_bond_state` returns to `REFUNDABLE`/`SLASHABLE`
-      with `failed_attempts: 1`, the amount and recipient intact, and that a
-      retry then succeeds.
-- [ ] **Measure how long the callback takes.** If it can exceed
-      `PAYOUT_CONFIRM_DELAY` (3600s), that constant must be raised, or
-      `confirm_payout` redesigned around a real success signal.
-- [ ] Confirm a payout already confirmed as `REFUNDED`/`SLASHED` is **never**
-      reopened by the callback.
+- [ ] Confirm the case stays at `PAYOUT_PENDING` with the amount, recipient and
+      disposition intact.
+- [ ] Confirm the contract's on-chain balance still holds the bond. This is the
+      off-chain detection signal: contract balance versus unconfirmed
+      settlements.
+- [ ] Do **not** call `confirm_payout` on it. Confirm that withholding
+      confirmation leaves the entitlement recorded indefinitely.
+- [ ] Confirm no method reopens or re-emits it.
 
-Record every transaction hash. Until this section passes, the contract should
-not custody meaningful value.
+Until a Studio-loadable failure callback or a verified balance accessor exists,
+the operational rule is: **never confirm a payout whose outbound transfer you
+have not seen succeed on the explorer.** Record every transaction hash.

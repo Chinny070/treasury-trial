@@ -212,7 +212,8 @@ DECISION_REJECTED = "REJECTED"
 DECISION_INVALID = "INVALID"
 
 # Bond state machine (Stage 1 section 10, extended in Stage 2 with the
-# in-flight PAYOUT_PENDING state required by the retry model).
+# in-flight PAYOUT_PENDING state). PAYOUT_PENDING means the transfer was
+# emitted, not that it was delivered.
 BOND_NONE = "NONE"
 BOND_LOCKED = "LOCKED"
 BOND_REFUNDABLE = "REFUNDABLE"
@@ -839,7 +840,7 @@ class TreasuryTrial(gl.Contract):
     # Internal helpers. Storage-touching, never public.                        #
     # ----------------------------------------------------------------------- #
 
-    def _now(self) -> int:
+    def _now(self):
         return int(datetime.datetime.now(datetime.timezone.utc).timestamp())
 
     def _require_unpaused(self):
@@ -875,7 +876,7 @@ class TreasuryTrial(gl.Contract):
             raise gl.vm.UserError("EXPECTED: dao_id not registered")
         return json.loads(self.dao_meta[dao_id])
 
-    def _case_evidence(self, case_id: str, include_challenge_scoped: bool):
+    def _case_evidence(self, case_id, include_challenge_scoped):
         if case_id not in self.case_evidence_ids:
             return []
         records = []
@@ -1753,6 +1754,17 @@ class TreasuryTrial(gl.Contract):
         second call cannot emit a second transfer. Stage 1 established that the
         outbound transfer is a SEPARATE emitted transaction, so success is not
         observable here: PAYOUT_PENDING means emitted, not delivered.
+
+        NO AUTOMATIC RETRY. An earlier revision reopened a failed payout from
+        an __on_errored_message__ hook, but that dunder prevented Studio from
+        extracting the contract schema at all - no contract in this codebase
+        that loads carries any dunder other than __init__ - so it was removed.
+        Without a failure signal the contract cannot distinguish "not
+        delivered" from "delivered", and a caller-driven retry would risk
+        paying twice. A stalled payout therefore stays PAYOUT_PENDING with its
+        exact amount and recipient preserved, which is detectable off-chain by
+        comparing the contract's on-chain balance against the sum of unpaid
+        settlements. See docs/STAGE_2_CONTRACT_ARCHITECTURE.md section 7.4.
         """
         settlement = self._load_settlement(case_id)
         status = settlement["bond_status"]
@@ -1796,11 +1808,18 @@ class TreasuryTrial(gl.Contract):
         reason execute_payout is not.
 
         LIMITATION, stated plainly: the verified runtime gives the contract no
-        positive success signal for an emitted transfer. Finality here is
-        therefore time-based - the transfer was emitted, and no
-        __on_errored_message__ arrived within PAYOUT_CONFIRM_DELAY. The exact
-        timing guarantee of that callback is NOT live-verified (Stage 1 item G)
-        and must be before this is relied on with real value at scale.
+        positive success signal for an emitted transfer, and the failure
+        callback cannot be used because it breaks schema extraction. Finality
+        here is therefore time-based: the transfer was emitted and
+        PAYOUT_CONFIRM_DELAY has passed. If the transfer had in fact failed,
+        this books it as complete while the GEN is still held by the contract.
+
+        DO NOT confirm a payout whose outbound transfer you have not seen
+        succeed on the explorer. Confirmation is a deliberate, separate,
+        permissionless step precisely so that it can be withheld: leaving a
+        case at PAYOUT_PENDING preserves the entitlement, the amount and the
+        recipient indefinitely. This is Stage 1 open item G and is the largest
+        outstanding risk in the protocol.
         """
         settlement = self._load_settlement(case_id)
         if settlement["bond_status"] in [BOND_REFUNDED, BOND_SLASHED]:
@@ -1818,37 +1837,6 @@ class TreasuryTrial(gl.Contract):
         if self.config["payout_in_flight"] == case_id:
             self.config["payout_in_flight"] = ""
         return settlement["bond_status"]
-
-    def __on_errored_message__(self):
-        """
-        The runtime reports that the emitted transfer failed.
-
-        Roll the in-flight payout back to its settled disposition so it can be
-        retried. Entitlement, amount and recipient are all preserved; only the
-        in-flight marker is cleared. A payout already booked as REFUNDED or
-        SLASHED is NEVER reopened, which is what stops a confirmed transfer
-        from being paid twice.
-
-        Deliberately silent on unexpected state: this is an error path, and
-        raising here would compound one failure with another.
-        """
-        case_id = self.config["payout_in_flight"]
-        if case_id == "":
-            return
-        if case_id not in self.settlements:
-            return
-        settlement = json.loads(self.settlements[case_id])
-        if settlement["bond_status"] != BOND_PAYOUT_PENDING:
-            return
-        if settlement["disposition"] == "SLASH":
-            settlement["bond_status"] = BOND_SLASHABLE
-        else:
-            settlement["bond_status"] = BOND_REFUNDABLE
-        settlement["failed_attempts"] = int(settlement["failed_attempts"]) + 1
-        settlement["last_error"] = "OUTBOUND_TRANSFER_FAILED"
-        settlement["emitted_at"] = 0
-        self.settlements[case_id] = json.dumps(settlement)
-        self.config["payout_in_flight"] = ""
 
     # ----------------------------------------------------------------------- #
     # Owner. Pause and unpause ONLY. No fund or verdict powers exist.          #
