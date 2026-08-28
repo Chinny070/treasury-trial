@@ -1,0 +1,11 @@
+# Contract source must stay LF on every checkout.
+#
+# GenLayer Studio's schema extraction is byte-sensitive: CRLF line endings (and
+# any non-ASCII byte) make gen_getContractSchemaForCode fail with
+# VM_ERROR: invalid_contract. This user's global core.autocrlf=true would
+# otherwise rewrite these files to CRLF on checkout and silently break them.
+# tests/test_source_shape.py enforces the same rule in CI.
+* text=auto eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
