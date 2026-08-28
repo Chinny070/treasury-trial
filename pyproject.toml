@@ -1,0 +1,8 @@
+[project]
+name = "treasury-trial"
+version = "0.2.0"
+description = "Treasury Trial - evidence-backed policy amendment for DAO treasuries, adjudicated by GenLayer under a DAO's own frozen policy, with real native GEN amendment bonds"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
