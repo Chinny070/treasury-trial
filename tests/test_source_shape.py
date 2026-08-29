@@ -253,3 +253,28 @@ def test_only_str_annotations_are_used():
         for arg in node.args.args[1:]:
             annotation = ast.unparse(arg.annotation) if arg.annotation else None
             assert annotation in allowed, node.name + " takes " + str(annotation)
+
+
+def test_no_docstrings_on_public_methods():
+    """
+    Public methods must carry no docstring.
+
+    Across the user's four contracts that deploy - Foresign, Continuum,
+    SeedWager and Seedling - there are 138 `@gl.public.*` methods and ZERO
+    docstrings on any of them. Treasury Trial had 14, the largest 1339
+    characters, and Studio could not extract its schema. Docstrings on module
+    functions and private methods are fine and are used by those contracts;
+    it is specifically the decorated public surface that must stay clear.
+
+    The content was not deleted - it was moved to `#` comments above each
+    decorator.
+    """
+    offenders = []
+    for node in _contract_class(PRODUCTION).body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if not any(ast.unparse(d).startswith("gl.public") for d in node.decorator_list):
+            continue
+        if ast.get_docstring(node):
+            offenders.append(node.name)
+    assert offenders == [], "docstring on public method(s): " + ", ".join(offenders)

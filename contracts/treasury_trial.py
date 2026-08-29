@@ -997,17 +997,15 @@ class TreasuryTrial(gl.Contract):
     # DAO registration                                                         #
     # ----------------------------------------------------------------------- #
 
+    # Claim an unused dao_id. First registrant wins, permanently.
+    #
+    # The claimant becomes the DAO controller FOR PROTOCOL PURPOSES ONLY.
+    # This asserts nothing about legal or governance ownership of any real
+    # organization. The controller's only power is that nobody else can
+    # register this dao_id: they cannot edit policies, decide cases, or move
+    # any GEN. There is no transfer and no de-registration in V1.
     @gl.public.write
     def register_dao(self, dao_id: str) -> str:
-        """
-        Claim an unused dao_id. First registrant wins, permanently.
-
-        The claimant becomes the DAO controller FOR PROTOCOL PURPOSES ONLY.
-        This asserts nothing about legal or governance ownership of any real
-        organization. The controller's only power is that nobody else can
-        register this dao_id: they cannot edit policies, decide cases, or move
-        any GEN. There is no transfer and no de-registration in V1.
-        """
         self._require_unpaused()
         identifier = _valid_dao_id(dao_id)
         if identifier in self.dao_admin:
@@ -1030,6 +1028,12 @@ class TreasuryTrial(gl.Contract):
     # Policy version 1                                                         #
     # ----------------------------------------------------------------------- #
 
+    # Create version 1 of a DAO's treasury policy. Controller only.
+    #
+    # This method can ONLY ever mint version 1. Every later version is minted
+    # by the contract itself when an amendment case is ACCEPTED. There is no
+    # path by which anyone, including the controller or the owner, edits a
+    # policy record after it exists.
     @gl.public.write
     def create_policy(
         self,
@@ -1048,14 +1052,6 @@ class TreasuryTrial(gl.Contract):
         challenge_window_seconds: str,
         evidence_window_seconds: str,
     ) -> str:
-        """
-        Create version 1 of a DAO's treasury policy. Controller only.
-
-        This method can ONLY ever mint version 1. Every later version is minted
-        by the contract itself when an amendment case is ACCEPTED. There is no
-        path by which anyone, including the controller or the owner, edits a
-        policy record after it exists.
-        """
         self._require_unpaused()
         identifier = _valid_dao_id(dao_id)
         meta = self._load_meta(identifier)
@@ -1170,17 +1166,15 @@ class TreasuryTrial(gl.Contract):
     # Amendment cases                                                          #
     # ----------------------------------------------------------------------- #
 
+    # Open one amendment case proposing exactly ONE field change.
+    #
+    # Permissionless: any address may propose. The case snapshots everything
+    # it will ever be judged against, so a later policy version cannot
+    # retroactively change the rules an open case is decided under.
     @gl.public.write
     def open_amendment_case(
         self, dao_id: str, target_field: str, proposed_value: str, rationale: str
     ) -> str:
-        """
-        Open one amendment case proposing exactly ONE field change.
-
-        Permissionless: any address may propose. The case snapshots everything
-        it will ever be judged against, so a later policy version cannot
-        retroactively change the rules an open case is decided under.
-        """
         self._require_unpaused()
         identifier = _valid_dao_id(dao_id)
         meta = self._load_meta(identifier)
@@ -1262,16 +1256,14 @@ class TreasuryTrial(gl.Contract):
         self.dao_meta[identifier] = json.dumps(meta)
         return case_id
 
+    # Lock the proposer's native GEN bond.
+    #
+    # The amount is taken from gl.message.value, which is runtime state. The
+    # caller never declares an amount, so a declared/received mismatch is
+    # structurally impossible. The attached value must equal the bond frozen
+    # into the case exactly: no overpayment, no change-making.
     @gl.public.write.payable
     def lock_bond(self, case_id: str) -> str:
-        """
-        Lock the proposer's native GEN bond.
-
-        The amount is taken from gl.message.value, which is runtime state. The
-        caller never declares an amount, so a declared/received mismatch is
-        structurally impossible. The attached value must equal the bond frozen
-        into the case exactly: no overpayment, no change-making.
-        """
         self._require_unpaused()
         case = self._load_case(case_id)
         if case["status"] != CASE_DRAFT:
@@ -1296,9 +1288,9 @@ class TreasuryTrial(gl.Contract):
         self.cases[case_id] = json.dumps(case)
         return str(received)
 
+    # Abandon a case before any bond is locked. Nothing is forfeited.
     @gl.public.write
     def withdraw_case(self, case_id: str) -> str:
-        """Abandon a case before any bond is locked. Nothing is forfeited."""
         self._require_unpaused()
         case = self._load_case(case_id)
         if self._sender() != case["proposer"]:
@@ -1319,6 +1311,12 @@ class TreasuryTrial(gl.Contract):
     # Evidence                                                                 #
     # ----------------------------------------------------------------------- #
 
+    # Attach one bounded evidence record to an open case.
+    #
+    # Only a reference and a bounded excerpt are stored. Full pages are never
+    # persisted. A screenshot is admissible only as a link to the original
+    # public page whose text can actually be fetched; the image itself is
+    # never machine-verified and is flagged as such to the adjudicator.
     @gl.public.write
     def submit_evidence(
         self,
@@ -1331,14 +1329,6 @@ class TreasuryTrial(gl.Contract):
         independence_declared: str,
         affiliation_note: str,
     ) -> str:
-        """
-        Attach one bounded evidence record to an open case.
-
-        Only a reference and a bounded excerpt are stored. Full pages are never
-        persisted. A screenshot is admissible only as a link to the original
-        public page whose text can actually be fetched; the image itself is
-        never machine-verified and is flagged as such to the adjudicator.
-        """
         self._require_unpaused()
         case = self._load_case(case_id)
         if case["status"] != CASE_EVIDENCE_OPEN:
@@ -1406,19 +1396,17 @@ class TreasuryTrial(gl.Contract):
     # Adjudication                                                             #
     # ----------------------------------------------------------------------- #
 
+    # Freeze the exact evidence package, in its own transaction.
+    #
+    # Deliberately SEPARATE from adjudication. If freezing happened inside
+    # the adjudication transaction, a malformed model response would roll the
+    # freeze back with it and reopen submissions. Committing the freeze first
+    # means a failed adjudication can never unfreeze or mutate evidence: the
+    # frozen id set and its fingerprint are already durable.
+    #
+    # Deterministic only. No model runs here.
     @gl.public.write
     def freeze_evidence(self, case_id: str) -> str:
-        """
-        Freeze the exact evidence package, in its own transaction.
-
-        Deliberately SEPARATE from adjudication. If freezing happened inside
-        the adjudication transaction, a malformed model response would roll the
-        freeze back with it and reopen submissions. Committing the freeze first
-        means a failed adjudication can never unfreeze or mutate evidence: the
-        frozen id set and its fingerprint are already durable.
-
-        Deterministic only. No model runs here.
-        """
         self._require_unpaused()
         case = self._load_case(case_id)
         if case["status"] != CASE_EVIDENCE_OPEN:
@@ -1451,17 +1439,15 @@ class TreasuryTrial(gl.Contract):
         self.cases[case_id] = json.dumps(case)
         return case["evidence_fingerprint"]
 
+    # Fetch the frozen sources and adjudicate under the frozen policy.
+    #
+    # Requires an already-committed evidence freeze. Only URLs already frozen
+    # into the case are fetched; nothing the model returns can trigger a
+    # fetch. If validation of the model output fails, this transaction rolls
+    # back atomically - no verdict is written, the case does not advance, and
+    # the freeze committed by freeze_evidence is untouched.
     @gl.public.write
     def request_adjudication(self, case_id: str) -> str:
-        """
-        Fetch the frozen sources and adjudicate under the frozen policy.
-
-        Requires an already-committed evidence freeze. Only URLs already frozen
-        into the case are fetched; nothing the model returns can trigger a
-        fetch. If validation of the model output fails, this transaction rolls
-        back atomically - no verdict is written, the case does not advance, and
-        the freeze committed by freeze_evidence is untouched.
-        """
         self._require_unpaused()
         case = self._load_case(case_id)
         if case["status"] != CASE_EVIDENCE_FROZEN:
@@ -1498,18 +1484,16 @@ class TreasuryTrial(gl.Contract):
     # Challenges                                                               #
     # ----------------------------------------------------------------------- #
 
+    # Challenge a proposed verdict on one canonical ground.
+    #
+    # Bounded to 3 per case, each on a distinct ground, one open at a time.
+    # That is the anti-model-shopping control: nobody can re-roll the
+    # adjudicator until they like the answer. Challenges may only reference
+    # evidence already frozen into the case.
     @gl.public.write
     def open_challenge(
         self, case_id: str, ground: str, statement: str, evidence_refs_json: str
     ) -> str:
-        """
-        Challenge a proposed verdict on one canonical ground.
-
-        Bounded to 3 per case, each on a distinct ground, one open at a time.
-        That is the anti-model-shopping control: nobody can re-roll the
-        adjudicator until they like the answer. Challenges may only reference
-        evidence already frozen into the case.
-        """
         self._require_unpaused()
         case = self._load_case(case_id)
         if case["status"] not in [CASE_VERDICT_PROPOSED, CASE_CHALLENGE_WINDOW]:
@@ -1567,15 +1551,13 @@ class TreasuryTrial(gl.Contract):
         self.cases[case_id] = json.dumps(case)
         return challenge_id
 
+    # Re-adjudicate under the challenge and record the outcome.
+    #
+    # UPHELD or PARTIAL produce a REPLACEMENT verdict appended to the case
+    # history; the original verdict is never overwritten or deleted. REJECTED
+    # leaves the standing verdict in force. Evidence is never unfrozen.
     @gl.public.write
     def resolve_challenge(self, case_id: str, challenge_id: str) -> str:
-        """
-        Re-adjudicate under the challenge and record the outcome.
-
-        UPHELD or PARTIAL produce a REPLACEMENT verdict appended to the case
-        history; the original verdict is never overwritten or deleted. REJECTED
-        leaves the standing verdict in force. Evidence is never unfrozen.
-        """
         self._require_unpaused()
         case = self._load_case(case_id)
         if case["status"] != CASE_CHALLENGE_WINDOW:
@@ -1637,17 +1619,15 @@ class TreasuryTrial(gl.Contract):
     # Finalization                                                             #
     # ----------------------------------------------------------------------- #
 
+    # Freeze the effective verdict, the policy version, the case disposition
+    # and the bond disposition, in one deterministic step.
+    #
+    # Callable by anyone once the challenge conditions are satisfied. No
+    # model runs here. No admin can rewrite the result afterwards. On
+    # ACCEPTED a NEW policy version is minted; the prior version is marked
+    # SUPERSEDED but its record is never touched.
     @gl.public.write
     def finalize_case(self, case_id: str) -> str:
-        """
-        Freeze the effective verdict, the policy version, the case disposition
-        and the bond disposition, in one deterministic step.
-
-        Callable by anyone once the challenge conditions are satisfied. No
-        model runs here. No admin can rewrite the result afterwards. On
-        ACCEPTED a NEW policy version is minted; the prior version is marked
-        SUPERSEDED but its record is never touched.
-        """
         self._require_unpaused()
         case = self._load_case(case_id)
         if case["status"] not in [CASE_VERDICT_PROPOSED, CASE_CHALLENGE_WINDOW]:
@@ -1738,34 +1718,32 @@ class TreasuryTrial(gl.Contract):
     # Payout. ONE parameterized method. Recipient is never caller-chosen.       #
     # ----------------------------------------------------------------------- #
 
+    # Emit the single outbound GEN transfer for a settled bond.
+    #
+    # Deliberately NOT gated on pause: a bond that is already REFUNDABLE or
+    # SLASHABLE is owed, and an emergency pause must never strand it.
+    #
+    # The recipient is read from the settlement record written at
+    # finalization, never from a parameter, so no caller can redirect funds.
+    # The amount is the exact locked bond and nothing else.
+    #
+    # Status moves to PAYOUT_PENDING BEFORE the transfer is emitted, so a
+    # second call cannot emit a second transfer. Stage 1 established that the
+    # outbound transfer is a SEPARATE emitted transaction, so success is not
+    # observable here: PAYOUT_PENDING means emitted, not delivered.
+    #
+    # NO AUTOMATIC RETRY. An earlier revision reopened a failed payout from
+    # an __on_errored_message__ hook, but that dunder prevented Studio from
+    # extracting the contract schema at all - no contract in this codebase
+    # that loads carries any dunder other than __init__ - so it was removed.
+    # Without a failure signal the contract cannot distinguish "not
+    # delivered" from "delivered", and a caller-driven retry would risk
+    # paying twice. A stalled payout therefore stays PAYOUT_PENDING with its
+    # exact amount and recipient preserved, which is detectable off-chain by
+    # comparing the contract's on-chain balance against the sum of unpaid
+    # settlements. See docs/STAGE_2_CONTRACT_ARCHITECTURE.md section 7.4.
     @gl.public.write
     def execute_payout(self, case_id: str) -> str:
-        """
-        Emit the single outbound GEN transfer for a settled bond.
-
-        Deliberately NOT gated on pause: a bond that is already REFUNDABLE or
-        SLASHABLE is owed, and an emergency pause must never strand it.
-
-        The recipient is read from the settlement record written at
-        finalization, never from a parameter, so no caller can redirect funds.
-        The amount is the exact locked bond and nothing else.
-
-        Status moves to PAYOUT_PENDING BEFORE the transfer is emitted, so a
-        second call cannot emit a second transfer. Stage 1 established that the
-        outbound transfer is a SEPARATE emitted transaction, so success is not
-        observable here: PAYOUT_PENDING means emitted, not delivered.
-
-        NO AUTOMATIC RETRY. An earlier revision reopened a failed payout from
-        an __on_errored_message__ hook, but that dunder prevented Studio from
-        extracting the contract schema at all - no contract in this codebase
-        that loads carries any dunder other than __init__ - so it was removed.
-        Without a failure signal the contract cannot distinguish "not
-        delivered" from "delivered", and a caller-driven retry would risk
-        paying twice. A stalled payout therefore stays PAYOUT_PENDING with its
-        exact amount and recipient preserved, which is detectable off-chain by
-        comparing the contract's on-chain balance against the sum of unpaid
-        settlements. See docs/STAGE_2_CONTRACT_ARCHITECTURE.md section 7.4.
-        """
         settlement = self._load_settlement(case_id)
         status = settlement["bond_status"]
         if status in [BOND_REFUNDED, BOND_SLASHED]:
@@ -1797,30 +1775,28 @@ class TreasuryTrial(gl.Contract):
         _Recipient(Address(recipient)).emit_transfer(value=u256(amount))
         return recipient
 
+    # Book an emitted payout as final once the confirmation delay has passed
+    # with no failure reported by the runtime.
+    #
+    # Moves nothing. Emits nothing. Purely bookkeeping, so it can never cause
+    # a second transfer. Callable by anyone. Not pause-gated, for the same
+    # reason execute_payout is not.
+    #
+    # LIMITATION, stated plainly: the verified runtime gives the contract no
+    # positive success signal for an emitted transfer, and the failure
+    # callback cannot be used because it breaks schema extraction. Finality
+    # here is therefore time-based: the transfer was emitted and
+    # PAYOUT_CONFIRM_DELAY has passed. If the transfer had in fact failed,
+    # this books it as complete while the GEN is still held by the contract.
+    #
+    # DO NOT confirm a payout whose outbound transfer you have not seen
+    # succeed on the explorer. Confirmation is a deliberate, separate,
+    # permissionless step precisely so that it can be withheld: leaving a
+    # case at PAYOUT_PENDING preserves the entitlement, the amount and the
+    # recipient indefinitely. This is Stage 1 open item G and is the largest
+    # outstanding risk in the protocol.
     @gl.public.write
     def confirm_payout(self, case_id: str) -> str:
-        """
-        Book an emitted payout as final once the confirmation delay has passed
-        with no failure reported by the runtime.
-
-        Moves nothing. Emits nothing. Purely bookkeeping, so it can never cause
-        a second transfer. Callable by anyone. Not pause-gated, for the same
-        reason execute_payout is not.
-
-        LIMITATION, stated plainly: the verified runtime gives the contract no
-        positive success signal for an emitted transfer, and the failure
-        callback cannot be used because it breaks schema extraction. Finality
-        here is therefore time-based: the transfer was emitted and
-        PAYOUT_CONFIRM_DELAY has passed. If the transfer had in fact failed,
-        this books it as complete while the GEN is still held by the contract.
-
-        DO NOT confirm a payout whose outbound transfer you have not seen
-        succeed on the explorer. Confirmation is a deliberate, separate,
-        permissionless step precisely so that it can be withheld: leaving a
-        case at PAYOUT_PENDING preserves the entitlement, the amount and the
-        recipient indefinitely. This is Stage 1 open item G and is the largest
-        outstanding risk in the protocol.
-        """
         settlement = self._load_settlement(case_id)
         if settlement["bond_status"] in [BOND_REFUNDED, BOND_SLASHED]:
             raise gl.vm.UserError("EXPECTED: payout already completed")
@@ -1907,9 +1883,9 @@ class TreasuryTrial(gl.Contract):
             raise gl.vm.UserError("EXPECTED: policy not found")
         return self.policies[policy_id]
 
+    # Newest-first walk of the append-only version chain.
     @gl.public.view
     def get_policy_history(self, dao_id: str, offset: str, limit: str) -> str:
-        """Newest-first walk of the append-only version chain."""
         identifier = dao_id.strip().lower()
         if identifier not in self.current_policy:
             raise gl.vm.UserError("EXPECTED: dao has no policy")
