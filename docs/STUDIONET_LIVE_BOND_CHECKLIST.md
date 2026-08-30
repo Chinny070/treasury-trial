@@ -12,13 +12,14 @@ treasury, and a third address to act as a challenger.
 
 ---
 
-## 0. Schema load (blocking)
+## 0. Schema load (blocking) - PASSED 2026-08-29
 
-The production contract has **never been loaded in Studio**. Do this first;
-everything else depends on it.
+Schema loads. Took five revisions; the cause was a 31-line leading comment
+block, not any of the four things suspected before it. See
+STAGE_2_CONTRACT_ARCHITECTURE.md section 2.
 
-- [ ] Paste `contracts/treasury_trial.py` into a Studio file.
-- [ ] Confirm the schema panel populates rather than showing
+- [x] Paste `contracts/treasury_trial.py` into a Studio file.
+- [x] Confirm the schema panel populates rather than showing
       "Could not load contract schema".
 - [ ] Confirm the write methods listed are exactly: `register_dao`,
       `create_policy`, `open_amendment_case`, `lock_bond`, `withdraw_case`,
