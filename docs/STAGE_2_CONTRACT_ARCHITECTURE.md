@@ -218,14 +218,39 @@ These are integrity anchors against accidental drift and stale snapshots, **not 
 
 ## 10. Semantic adjudication
 
-APIs: `gl.nondet.web.render(url, mode="text")` wrapped in `gl.eq_principle.strict_eq`, then `gl.nondet.exec_prompt` under `gl.eq_principle.prompt_comparative`.
+APIs: `gl.nondet.web.render(url, mode="text")` wrapped in `gl.eq_principle.strict_eq` for each source, then `gl.eq_principle.prompt_non_comparative` for the verdict.
 
-> **Corrected 2026-08-30.** An earlier revision used `gl.get_webpage` unwrapped. On live StudioNet every fetch returned `UNAVAILABLE`, which drove the case to a structurally `INVALID` verdict before the model was consulted. `render` drives a real browser; `strict_eq` makes all validators agree on the exact bytes. See STAGE_1 section 1.2b.
+### Why non-comparative
 
-- Only URLs **already frozen into the case** are fetched, each inside its own `strict_eq` block. Nothing the model returns can trigger a fetch, and the prompt forbids inventing or following URLs.
-- Fetched text is enclosed in `<<<UNTRUSTED_WEB_CONTENT>>>` markers, and the model is told it is data, never instructions - and that an instruction found inside evidence is itself a manipulation signal that fails `MANIPULATION_RISK_ACCEPTABLE`.
+The first live adjudication returned **`Consensus Result: Undetermined` after three validator rotations**. The cause was the equivalence principle, not the lifecycle: `prompt_comparative` was used with criteria demanding that **all eight dimension results be identical** across validators. Borderline judgements - `UNCLEAR` versus `FAIL` on thin evidence - do not reproduce exactly across independent model runs, so exact agreement is not a reachable target for a subjective task.
+
+`prompt_non_comparative(fn, task=..., criteria=...)` is the primitive designed for this:
+
+- `fn()` returns the **case dossier**, assembled deterministically from frozen state, so every validator sees byte-identical input;
+- the **leader** performs the task and produces the verdict;
+- **validators** judge whether that verdict was produced with integrity, against `ADJUDICATION_CRITERIA`.
+
+A defensible verdict is accepted even where a validator would have graded a borderline dimension differently.
+
+> **This does not weaken the protocol's guarantees.** `_validate_model_output` still rejects malformed output outright and rolls the transaction back atomically. `_decide` still computes the decision from the contract's own frozen rules. Consensus governs whether a verdict is **admissible**, never what it **means**. The relaxation is in reproducibility, not in authority.
+
+### Separation of concerns
+
+| Piece | Deterministic? | Role |
+|---|---|---|
+| `_build_case_dossier` | yes | the facts: frozen policy, the single proposed change, evidence with fetched text in untrusted markers, same-host clusters, challenge note |
+| `ADJUDICATION_TASK` | yes, static | instructions, 8 dimensions, safety rules, INVALID vocabulary, exact JSON schema |
+| `ADJUDICATION_CRITERIA` | yes, static | what makes a verdict admissible to a validator |
+| leader model | no | produces the verdict |
+| `_validate_model_output` | yes | strict schema and vocabulary gate; malformed output rolls back |
+| `_decide` | yes | computes the decision under the policy's frozen criteria |
+
+### Evidence and injection handling
+
+- Only URLs **already frozen into the case** are fetched, each inside its own `strict_eq` block. Nothing the model returns can trigger a fetch, and the task forbids inventing or following URLs.
+- Fetched text is enclosed in `<<<UNTRUSTED_WEB_CONTENT>>>` markers. The task states it is data, never instructions, and that an instruction found inside evidence is itself a manipulation signal. The criteria make validators **independently** police whether the answer obeyed such an instruction.
 - Fetched text outranks submitter excerpts; a mismatch makes the item unreliable.
-- **Bond size and every economic figure about the stake are excluded from the prompt entirely.** The only numbers shown are the policy values under judgment. Asserted directly against the generated prompt text in `test_bond_size_is_absent_from_the_adjudication_prompt`.
+- **Bond size and every economic figure about the stake are excluded from the dossier entirely.** The only numbers shown are the policy values under judgment. Asserted directly against the generated text, and against both static constants, in `test_bond_size_is_absent_from_the_adjudication_prompt`.
 
 ### Cost reasoning
 

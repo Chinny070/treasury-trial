@@ -105,7 +105,7 @@ class Transfers:
         self.fail_next = False
 
     def install(self, vm):
-        def hook(_vm, request):
+        def hook(inner_vm, request):
             if "EthSend" in request:
                 data = request["EthSend"]
                 self.sent.append(
@@ -115,6 +115,8 @@ class Transfers:
                     self.fail_next = False
                     raise RuntimeError("simulated outbound transfer failure")
                 return {"ok": None}
+            if "ExecPromptTemplate" in request:
+                return _handle_prompt_template(inner_vm, request["ExecPromptTemplate"])
             return None
 
         vm._gl_call_hook = hook
@@ -124,6 +126,29 @@ class Transfers:
 
     def recipient_matches(self, expected_hex: str) -> bool:
         return checksum(expected_hex).lower() in self.last()["address"].lower()
+
+
+def _handle_prompt_template(vm, data):
+    """
+    Serve `gl.eq_principle.prompt_non_comparative` in direct mode.
+
+    gltest handles `ExecPrompt` and `WebRender` natively but knows nothing
+    about `ExecPromptTemplate`, which is how the non-comparative principle
+    reaches the model: the leader template performs the task and the validator
+    template judges the answer. We answer both from `vm._tt_verdict`, set by
+    `mock_adjudicator`.
+    """
+    template = data.get("template", "")
+    if template == "EqNonComparativeLeader":
+        payload = getattr(vm, "_tt_verdict", None)
+        if payload is None:
+            raise AssertionError(
+                "no adjudicator response registered; call mock_adjudicator(vm, ...) first"
+            )
+        return {"ok": payload}
+    # Validator template: in direct mode there is one node, so the leader's
+    # answer is accepted. Consensus behaviour is exercised live, not here.
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------- #
@@ -178,8 +203,9 @@ def verdict(
 
 
 def mock_adjudicator(vm, result) -> None:
+    """Register the adjudicator's response for the non-comparative principle."""
     payload = result if isinstance(result, str) else json.dumps(result)
-    vm.mock_llm(PROMPT_PATTERN, payload)
+    vm._tt_verdict = payload
 
 
 EVIDENCE_URLS = [
