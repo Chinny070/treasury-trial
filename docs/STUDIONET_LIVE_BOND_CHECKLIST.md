@@ -21,12 +21,12 @@ STAGE_2_CONTRACT_ARCHITECTURE.md section 2.
 - [x] Paste `contracts/treasury_trial.py` into a Studio file.
 - [x] Confirm the schema panel populates rather than showing
       "Could not load contract schema".
-- [ ] Confirm the write methods listed are exactly: `register_dao`,
+- [x] Confirm the write methods listed are exactly: `register_dao`,
       `create_policy`, `open_amendment_case`, `lock_bond`, `withdraw_case`,
       `submit_evidence`, `freeze_evidence`, `request_adjudication`,
       `open_challenge`, `resolve_challenge`, `finalize_case`,
       `execute_payout`, `confirm_payout`, `pause`, `unpause`.
-- [ ] Confirm `lock_bond` is marked **payable** and no other write is.
+- [x] Confirm `lock_bond` is marked **payable** and no other write is.
 
 If the schema fails to load, stop and bisect exactly as in Stage 1 Addendum
 B.0 - do not guess.
@@ -41,9 +41,12 @@ Source sha256 `55b1413a0e4622b098afda34b288dcd020601290808ef29f133c0dc2785d9b54`
 
 - [x] Deploy from your main wallet. No constructor arguments, no value.
 - [x] Record the contract address.
-- [ ] `get_config()` returns your address as `owner`, `paused: false`,
+- [x] `get_config()` returns your address as `owner`, `paused: false`,
       all four counts `0`, and the four frozen vocabularies with lengths
-      8 / 8 / 11 / 9.
+      8 / 8 / 11 / 9. VERIFIED 2026-08-30: owner
+      `0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b`, all counters 0, all four
+      vocabularies exactly 8 / 8 / 11 / 9. Deployed bytecode matches the
+      tested source.
 
 ---
 
