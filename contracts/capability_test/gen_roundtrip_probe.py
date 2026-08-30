@@ -1,5 +1,11 @@
 # v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+
+from genlayer import *
+
+import json
+
+
 #
 # NON-PRODUCTION NATIVE GEN CAPABILITY PROBE - REFUND PATH.
 # NOT Treasury Trial production code. Do not deploy without approval.
@@ -17,10 +23,6 @@
 #     the two methods is at fault is not yet isolated, so the slash path
 #     lives in its own probe file. Every contract that has loaded so far has
 #     at most one emit_transfer call site.
-
-from genlayer import *
-
-import json
 
 
 @gl.evm.contract_interface

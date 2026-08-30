@@ -1,5 +1,19 @@
 # v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+
+from genlayer import *
+
+import json
+import datetime
+
+
+# NOTE ON THIS FILE'S SHAPE: everything below was originally a header
+# comment block above the imports. GenVM v0.2.16 could not extract the
+# contract schema with a 31-line leading comment block, and loaded the
+# identical contract with a 2-line one. The leading block is therefore
+# kept to the version tag and the Depends directive only, and all
+# commentary lives here instead. See tests/test_source_shape.py.
+#
 #
 # TREASURY TRIAL - protocol core.
 # "Every treasury decision has a case."
@@ -28,11 +42,6 @@
 #   replay       second claim rolled back, Value 0
 # The outbound transfer is a SEPARATE emitted Send transaction. This contract
 # therefore never assumes value has moved inside the calling transaction.
-
-from genlayer import *
-
-import json
-import datetime
 
 
 # Native GEN payout target. Declares no view/write methods because Treasury

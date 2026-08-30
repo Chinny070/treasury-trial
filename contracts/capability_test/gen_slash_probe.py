@@ -1,5 +1,11 @@
 # v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+
+from genlayer import *
+
+import json
+
+
 #
 # NON-PRODUCTION NATIVE GEN CAPABILITY PROBE - SLASH PATH.
 # NOT Treasury Trial production code. Do not deploy without approval.
@@ -16,10 +22,6 @@
 #
 # Constraints: ASCII only including comments; plain "def __init__(self):";
 # no private helper methods.
-
-from genlayer import *
-
-import json
 
 
 @gl.evm.contract_interface

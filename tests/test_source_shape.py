@@ -278,3 +278,41 @@ def test_no_docstrings_on_public_methods():
         if ast.get_docstring(node):
             offenders.append(node.name)
     assert offenders == [], "docstring on public method(s): " + ", ".join(offenders)
+
+
+def _leading_comment_block(path):
+    lines = _source(path).split("\n")
+    count = 0
+    for line in lines:
+        if line.startswith("#") or line.strip() == "":
+            count += 1
+        else:
+            break
+    return count, sum(len(line) + 1 for line in lines[:count])
+
+
+@pytest.mark.parametrize("path", ALL_CONTRACTS, ids=lambda p: p.name)
+def test_leading_comment_block_is_short(path):
+    """
+    The leading comment block must stay tiny.
+
+    This is what actually broke Studio schema extraction for this contract.
+    Proven by bisect: an identical contract body failed with a 31-line leading
+    comment block (1688 bytes) and loaded with a 2-line one. GenVM v0.2.16
+    scans the leading comments for the `Depends` directive and cannot cope
+    with a long block.
+
+    The contracts that deploy agree: Foresign has 2 leading lines (85 bytes),
+    Continuum 3 (95 bytes). Seedling deploys at 23 lines / 1258 bytes, so the
+    exact threshold sits somewhere above that - which is precisely why this
+    guard is set conservatively rather than at the observed failure point.
+
+    All commentary belongs BELOW the imports, where it is unrestricted.
+    """
+    count, size = _leading_comment_block(path)
+    assert count <= 4, (
+        path.name + " has a " + str(count) + "-line leading comment block. "
+        "Keep it to the version tag plus the Depends directive; put commentary "
+        "below the imports."
+    )
+    assert size <= 200, path.name + " leading comment block is " + str(size) + " bytes"
