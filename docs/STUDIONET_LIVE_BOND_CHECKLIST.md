@@ -33,10 +33,14 @@ B.0 - do not guess.
 
 ---
 
-## 1. Deploy
+## 1. Deploy - DONE 2026-08-30
 
-- [ ] Deploy from your main wallet. No constructor arguments, no value.
-- [ ] Record the contract address.
+**Deployed at `0xF4D5855c7944d240E7b6DC37a369D6b2Fe6ED514`** on StudioNet.
+Source sha256 `55b1413a0e4622b098afda34b288dcd020601290808ef29f133c0dc2785d9b54`,
+87164 bytes, commit `243d8ad`.
+
+- [x] Deploy from your main wallet. No constructor arguments, no value.
+- [x] Record the contract address.
 - [ ] `get_config()` returns your address as `owner`, `paused: false`,
       all four counts `0`, and the four frozen vocabularies with lengths
       8 / 8 / 11 / 9.
