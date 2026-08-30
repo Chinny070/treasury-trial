@@ -17,9 +17,6 @@ from conftest import (
     verdict, warp_to,
 )
 
-CONFIRM_DELAY = 3600
-
-
 def _proposed(c, vm, result=None):
     case_id = bonded_case_with_evidence(c, vm)
     adjudicate(c, vm, case_id, result if result is not None else verdict())
@@ -187,7 +184,6 @@ def test_pause_never_strands_owed_gen(env):
     vm.sender = OUTSIDER
     c.execute_payout(case_id)
     assert transfers.recipient_matches(PROPOSER_HEX)
-    warp_to(vm, bond_of(c, case_id)["emitted_at"] + CONFIRM_DELAY + 1)
     assert c.confirm_payout(case_id) == "REFUNDED"
 
 

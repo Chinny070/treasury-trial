@@ -123,7 +123,7 @@ At most **one active case per DAO**. The slot frees on finalization or withdrawa
 NONE --lock_bond (payable)--> LOCKED
   --finalize_case--> REFUNDABLE | SLASHABLE
     --execute_payout--> PAYOUT_PENDING     (emitted, not proven delivered)
-      --confirm_payout--> REFUNDED | SLASHED
+      --confirm_payout--> REFUNDED | SLASHED   (explicit, no time gate)
 ```
 
 ### 7.1 Locking
@@ -148,26 +148,35 @@ Decided deterministically in `finalize_case`, with no model involvement:
 
 Status flips to `PAYOUT_PENDING` **before** the transfer is emitted, so a second call cannot emit a second transfer.
 
-### 7.4 Failed outbound transfer
+### 7.4 Failed outbound transfer - RESOLVED by live testing
 
-This was Stage 1's open item **G**, and it is **not solved**. What follows is the safest design available under a hard constraint.
+Stage 1 open item **G**. Answered on live StudioNet on 2026-08-30 with the isolated probe `contracts/capability_test/gen_error_hook_probe.py` (probes `0x712e3f…486532` and `0xC23680…07f8B6`). Full transaction evidence in [`STUDIONET_LIVE_BOND_CHECKLIST.md`](STUDIONET_LIVE_BOND_CHECKLIST.md) section 9.
 
-**The constraint.** An earlier revision reopened a failed payout from an `__on_errored_message__` hook. Studio could not extract the contract schema with that dunder present. Diffing against the user's contracts that do deploy - Foresign, Continuum, SeedWager - every one of them carries `__init__` as its **only** dunder. The hook was removed to make the contract deployable.
+| Scenario | Outcome | `hook_calls` |
+|---|---|---|
+| Insufficient balance (emit 1000 GEN while holding 1) | `emit_transfer` raised `SystemError: 7: Imbalance` **synchronously at the call site**. Transaction `ERROR` / `exit_code 1`, and **every state write rolled back**: status returned to ready, in-flight pointer cleared, counters reverted. | **0** |
+| Payout to an EOA | SUCCESS, GEN delivered | **0** |
+| Payout to a **contract** with no `__receive__` | SUCCESS, separate `Send` finalized, recipient balance became 1 GEN | **0** |
 
-**The consequence.** The runtime gives the contract no positive success signal for an emitted transfer, and the failure callback is unusable. `execute_payout` therefore cannot know whether the GEN arrived.
+**What this establishes:**
 
-**The design:**
+1. **A failed `emit_transfer` reverts synchronously.** The transaction errors and rolls back atomically, so a funding failure cannot leave a payout stranded in `PAYOUT_PENDING` - the attempt simply never happened, and a retry is the first and only emission.
+2. **`__on_errored_message__` fired zero times**, including on a genuine induced failure. There is no live evidence it is delivered at all under GenVM v0.2.16. It is **not** restored: unreachable code that can silently mutate bond state is a liability, not a safeguard.
+3. **Contracts can receive native GEN** without `__receive__`, so the recipient-rejection failure mode this design feared does not exist here.
 
-- **No automatic retry, and no blind retry.** `execute_payout` refuses while a payout is in flight. Without a failure signal the contract cannot distinguish "not delivered" from "delivered", and a caller-driven retry would risk paying twice.
-- **A stalled payout preserves everything.** `PAYOUT_PENDING` keeps the exact amount, recipient, disposition and emission time. Nothing is lost; the entitlement simply is not yet booked.
-- **Confirmation is separate, permissionless, and withholdable.** `confirm_payout(case_id)` books finality after `PAYOUT_CONFIRM_DELAY`. It moves nothing and emits nothing, so it can never cause a second transfer - and it can simply be *withheld* when the outbound transfer was not observed to succeed.
+**The 3600-second confirmation delay has been removed.** It existed solely to bound a stranded `PAYOUT_PENDING` state that the evidence shows cannot arise. It guarded nothing, so it was deleted rather than re-tuned - a re-tuned timeout would have been a guess dressed as a safeguard.
+
+**The design as it now stands:**
+
+- **No automatic retry, and no blind retry.** `execute_payout` still refuses while a payout is in flight.
+- **`confirm_payout` remains a separate, explicit, permissionless step with no time gate.** It moves nothing and emits nothing, so it can never cause a second transfer.
 - **A completed payout is terminal.** No method reopens `REFUNDED`/`SLASHED`.
 
-> **Known limitation, stated plainly.** If an outbound transfer fails and `confirm_payout` is called anyway, the case is booked complete while the GEN is still held by the contract. There is no in-contract recovery path. Detection is off-chain: compare the contract's on-chain balance against the sum of settlements not yet confirmed. **Do not confirm a payout whose transfer you have not seen succeed on the explorer.**
+> **RESIDUAL RISK, stated plainly.** The tests exercised the failure paths that could be constructed. They do **not** prove that no asynchronous failure mode exists. `confirm_payout` is deliberately kept separate so that it can be **withheld**: leaving a case at `PAYOUT_PENDING` preserves the entitlement, the amount and the recipient indefinitely.
 >
-> Resolving this properly needs either a Studio-loadable failure callback or a verified balance accessor. Neither exists today. This is the largest outstanding risk in the protocol.
+> **Operational rule: do not confirm a payout whose outbound `Send` has not been observed successful and finalized on the explorer.**
 >
-> What is **not** at risk: double payment. The status guard blocks it regardless.
+> Double payment remains impossible regardless, via the terminal status guard.
 
 ---
 
@@ -362,7 +371,7 @@ From Stage 1 section 16, verified live on StudioNet by the user, Claude broadcas
 
 ## 18. Known limitations
 
-1. **Failed outbound transfers have no in-contract recovery** (Stage 1 item G, still open). `__on_errored_message__` cannot be used - it breaks Studio schema extraction - so a failed transfer leaves the case at `PAYOUT_PENDING` with the GEN held by the contract, and confirming it anyway books it complete incorrectly. Detection is off-chain. Highest-priority item before real value. Double payment is *not* at risk. See section 7.4.
+1. **Asynchronous transfer failure is unproven, not disproven** (Stage 1 item G, resolved as far as testing allows). Live testing showed a failed `emit_transfer` reverts synchronously and atomically, and that `__on_errored_message__` never fires - so the stranded-payout scenario this design feared does not occur on any path we could construct. It does not follow that no async failure mode exists. `confirm_payout` is kept separate and withholdable for exactly that reason. See section 7.4.
 2. **`policy_hash` is a 64-bit FNV-1a fingerprint**, not a cryptographic commitment (section 9).
 3. **Local test runner diverges from Studio.** gltest's direct runner extracts py-lib-genlayer-std **v0.3.0-rc7**, which exposes `gl.nondet.web` and has **no `gl.get_webpage`**; the pinned Studio runner has `gl.get_webpage` (used by the user's deployed Contradiction Protocol). Production code keeps the Studio-verified API and the harness shims it. **The contract's schema has not been loaded in Studio yet** - that is a Stage 3 first step.
 4. **Direct-mode harness cannot move real value.** `emit_transfer` surfaces as an `EthSend` request with no balance effect, so tests assert emitted recipient/amount, not balances. Real movement was proven live in Stage 1.

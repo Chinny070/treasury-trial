@@ -123,8 +123,9 @@ Use real, publicly fetchable URLs.
 - [ ] The contract's native balance drops to 0.
 - [ ] The recipient's balance rises by exactly the bond.
 - [ ] A second `execute_payout` reverts with `already in flight`.
-- [ ] `confirm_payout` before the delay reverts.
-- [ ] After 1 hour, `confirm_payout` returns `REFUNDED` or `SLASHED`.
+- [ ] **Only after seeing the outbound `Send` succeed and finalize above**,
+      `confirm_payout` returns `REFUNDED` or `SLASHED`. There is no time gate;
+      the wait is on YOUR observation, not on a clock.
 - [ ] `execute_payout` after confirmation reverts with `already completed`.
 - [ ] Total outbound transfers from the contract for this case: **exactly one**.
 

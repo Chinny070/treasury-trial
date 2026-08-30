@@ -19,9 +19,6 @@ from conftest import (
     seed_evidence, verdict, warp_to,
 )
 
-CONFIRM_DELAY = 3600
-
-
 def _settled(c, vm, decision="ACCEPT", **kwargs):
     case_id = bonded_case_with_evidence(c, vm, **kwargs)
     if decision == "ACCEPT":
@@ -223,7 +220,6 @@ def test_confirm_then_payout_again_rejected(env):
     vm, c, transfers = env
     case_id = _settled(c, vm, "ACCEPT")
     c.execute_payout(case_id)
-    warp_to(vm, bond_of(c, case_id)["emitted_at"] + CONFIRM_DELAY + 1)
     assert c.confirm_payout(case_id) == "REFUNDED"
     with reverts("already completed"):
         c.execute_payout(case_id)
@@ -232,12 +228,27 @@ def test_confirm_then_payout_again_rejected(env):
     assert len(transfers.sent) == 1
 
 
-def test_confirm_requires_the_delay_to_elapse(env):
+def test_confirm_has_no_time_delay(env):
+    """
+    Confirmation is immediate.
+
+    An earlier revision required 3600s to elapse first, guarding a stranded
+    PAYOUT_PENDING state. Live StudioNet testing showed a failed
+    emit_transfer raises synchronously and rolls the whole transaction back,
+    so that state cannot arise and the delay guarded nothing. It was removed
+    rather than re-tuned.
+    """
     vm, c, _ = env
     case_id = _settled(c, vm, "ACCEPT")
     c.execute_payout(case_id)
-    with reverts("confirmation delay has not elapsed"):
-        c.confirm_payout(case_id)
+    assert c.confirm_payout(case_id) == "REFUNDED"
+
+
+def test_no_confirmation_delay_constant_remains(env):
+    vm, c, _ = env
+    from conftest import contract_module
+
+    assert not hasattr(contract_module(c), "PAYOUT_CONFIRM_DELAY")
 
 
 def test_confirm_without_an_in_flight_payout_rejected(env):
@@ -251,7 +262,6 @@ def test_slash_confirms_to_slashed(env):
     vm, c, _ = env
     case_id = _settled(c, vm, "REJECT")
     c.execute_payout(case_id)
-    warp_to(vm, bond_of(c, case_id)["emitted_at"] + CONFIRM_DELAY + 1)
     assert c.confirm_payout(case_id) == "SLASHED"
 
 
@@ -322,9 +332,8 @@ def test_stalled_payout_preserves_the_entitlement(env):
     assert state["recipient"] == before["recipient"]
     assert state["disposition"] == "REFUND"
     assert state["emitted_at"] > 0
-    # Nothing books it as complete on its own.
-    with reverts("confirmation delay has not elapsed"):
-        c.confirm_payout(case_id)
+    # Nothing books it as complete on its own: only an explicit
+    # confirm_payout moves it, and that call can simply be withheld.
     assert bond_of(c, case_id)["bond_status"] == "PAYOUT_PENDING"
 
 
@@ -336,7 +345,6 @@ def test_confirmation_is_a_separate_withholdable_step(env):
     vm, c, transfers = env
     case_id = _settled(c, vm, "ACCEPT")
     c.execute_payout(case_id)
-    warp_to(vm, bond_of(c, case_id)["emitted_at"] + CONFIRM_DELAY + 1)
     vm.sender = OUTSIDER
     assert c.confirm_payout(case_id) == "REFUNDED"
     assert len(transfers.sent) == 1
@@ -346,7 +354,6 @@ def test_no_method_can_reopen_a_settled_payout(env):
     vm, c, _ = env
     case_id = _settled(c, vm, "ACCEPT")
     c.execute_payout(case_id)
-    warp_to(vm, bond_of(c, case_id)["emitted_at"] + CONFIRM_DELAY + 1)
     c.confirm_payout(case_id)
     for forbidden in ["reopen_payout", "retry_payout", "reset_payout", "cancel_payout"]:
         assert forbidden not in dir(c)

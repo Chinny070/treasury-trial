@@ -100,10 +100,6 @@ FETCH_SLICE = 3000
 PAGE_DEFAULT = 20
 PAGE_MAX = 50
 
-# Delay before an emitted payout may be booked as final. Gives the runtime a
-# window in which to deliver __on_errored_message__ for a failed transfer.
-PAYOUT_CONFIRM_DELAY = 3600
-
 
 # --------------------------------------------------------------------------- #
 # Frozen vocabularies (Stage 1 sections 4 to 8 and Addendum A.3).              #
@@ -1784,26 +1780,38 @@ class TreasuryTrial(gl.Contract):
         _Recipient(Address(recipient)).emit_transfer(value=u256(amount))
         return recipient
 
-    # Book an emitted payout as final once the confirmation delay has passed
-    # with no failure reported by the runtime.
+    # Book an emitted payout as final. Deliberate, explicit, separate.
     #
     # Moves nothing. Emits nothing. Purely bookkeeping, so it can never cause
     # a second transfer. Callable by anyone. Not pause-gated, for the same
     # reason execute_payout is not.
     #
-    # LIMITATION, stated plainly: the verified runtime gives the contract no
-    # positive success signal for an emitted transfer, and the failure
-    # callback cannot be used because it breaks schema extraction. Finality
-    # here is therefore time-based: the transfer was emitted and
-    # PAYOUT_CONFIRM_DELAY has passed. If the transfer had in fact failed,
-    # this books it as complete while the GEN is still held by the contract.
+    # There is NO time delay. An earlier revision required 3600 seconds to
+    # elapse first, on the assumption that a failed transfer would leave a
+    # payout stranded in PAYOUT_PENDING and that the runtime might report the
+    # failure asynchronously. Live StudioNet testing on 2026-08-30 disproved
+    # the premise, so the delay has been removed rather than re-tuned:
     #
-    # DO NOT confirm a payout whose outbound transfer you have not seen
-    # succeed on the explorer. Confirmation is a deliberate, separate,
-    # permissionless step precisely so that it can be withheld: leaving a
-    # case at PAYOUT_PENDING preserves the entitlement, the amount and the
-    # recipient indefinitely. This is Stage 1 open item G and is the largest
-    # outstanding risk in the protocol.
+    #   - a failed emit_transfer raised SystemError: 7: Imbalance
+    #     SYNCHRONOUSLY at the call site, and the whole transaction rolled
+    #     back atomically - status, in-flight pointer and counters all
+    #     reverted;
+    #   - no stranded PAYOUT_PENDING state was ever observed;
+    #   - __on_errored_message__ fired ZERO times across every scenario,
+    #     including a genuine induced failure;
+    #   - a payout to a contract recipient with no __receive__ succeeded and
+    #     the GEN landed.
+    #
+    # See docs/STUDIONET_LIVE_BOND_CHECKLIST.md section 9 for the transaction
+    # evidence.
+    #
+    # RESIDUAL RISK: those tests exercised the failure paths that could be
+    # constructed. They do not prove that no asynchronous failure mode exists.
+    # Confirmation is therefore kept as a separate step precisely so it can be
+    # WITHHELD: leaving a case at PAYOUT_PENDING preserves the entitlement,
+    # the amount and the recipient indefinitely. Operators must not confirm a
+    # payout whose outbound Send has not been observed successful and
+    # finalized on the explorer.
     @gl.public.write
     def confirm_payout(self, case_id: str) -> str:
         settlement = self._load_settlement(case_id)
@@ -1811,9 +1819,6 @@ class TreasuryTrial(gl.Contract):
             raise gl.vm.UserError("EXPECTED: payout already completed")
         if settlement["bond_status"] != BOND_PAYOUT_PENDING:
             raise gl.vm.UserError("EXPECTED: no payout is in flight for this case")
-        if self._now() < int(settlement["emitted_at"]) + PAYOUT_CONFIRM_DELAY:
-            raise gl.vm.UserError("EXPECTED: confirmation delay has not elapsed")
-
         if settlement["disposition"] == "SLASH":
             settlement["bond_status"] = BOND_SLASHED
         else:

@@ -131,12 +131,23 @@ def _public_methods(path):
 
 def test_exactly_one_emit_transfer_call_site():
     """
+    Exactly one outbound transfer call site.
+
     Stage 1: a contract carrying separate refund and slash payout methods
     failed to load its schema, while the same logic behind one parameterized
     method loaded and worked on StudioNet.
+
+    Counted from the AST, not by string search - the surrounding comments
+    legitimately discuss emit_transfer by name.
     """
-    source = _source(PRODUCTION)
-    assert source.count("emit_transfer") == 1
+    sites = [
+        node
+        for node in ast.walk(_tree(PRODUCTION))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "emit_transfer"
+    ]
+    assert len(sites) == 1
 
 
 def test_no_separate_refund_and_slash_methods():
