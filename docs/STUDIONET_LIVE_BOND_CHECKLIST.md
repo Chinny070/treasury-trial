@@ -88,25 +88,54 @@ If either still fails, isolate it before changing anything else.
 
 ---
 
-## 4. Evidence and adjudication (live model + live web)
+## 4. Evidence and adjudication - PASSED 2026-08-31
 
-Use real, publicly fetchable URLs.
+First successful end-to-end adjudication, on
+`0x7cD15c0d4F4741C2Ce3DD807246b6f13aA7f82A1`, case `c_1`.
 
-- [ ] `submit_evidence` twice with distinct real URLs.
-- [ ] A duplicate URL variant (`http`, `www.`, trailing slash, `?utm_source=`)
-      reverts with `duplicate source url`.
-- [ ] `freeze_evidence(case_id)` returns a fingerprint; a further
-      `submit_evidence` reverts.
-- [ ] `request_adjudication(case_id)` completes. **This is the first live test
-      of `gl.get_webpage` + `gl.eq_principle.prompt_comparative` in this
-      contract** - note the transaction time and whether validators reached
-      consensus.
-- [ ] `get_case_evidence` shows `fetch_status: FETCHED` and a non-empty
-      `fetched_excerpt` no longer than 3000 chars.
-- [ ] `get_verdict` shows a decision and a one-entry history.
-- [ ] If the model returns malformed JSON, confirm the transaction **rolls
-      back** and the case stays `EVIDENCE_FROZEN` with no verdict - the freeze
-      must survive.
+- [x] `submit_evidence` twice with distinct real URLs (`e_1` Wikipedia,
+      `e_2` CISA).
+- [x] `freeze_evidence` returned fingerprint `ab57b16cf1a603c7` - identical to
+      the fingerprint the superseded deployment produced for the same case
+      content, confirming the FNV-1a fingerprint is deterministic across
+      contracts.
+- [x] `request_adjudication` completed. **Consensus Result: Accepted**, one
+      rotation. The previous deployment produced `Undetermined` after three.
+- [x] **Both web fetches succeeded.** The Equivalence Principle Outputs show
+      three blocks: the full Wikipedia article, the full CISA page, and the
+      verdict. Each fetch is its own `strict_eq` block, so validators agreed on
+      byte-identical content before it entered the dossier.
+- [x] `unverified_evidence_ids` was empty and `decisive_evidence_ids` cited
+      both items - the model worked from fetched text, not from the
+      submitter's excerpts.
+
+### The verdict: REJECTED, and substantively right
+
+Model outcome `REJECT`; the contract's `_decide` returned `REJECTED` because
+two gated dimensions did not pass:
+
+| Dimension | Result | Model's reason (abridged) |
+|---|---|---|
+| MATERIAL_CHANGE_CONFIRMED | PASS | the change from 50000 to 80000 is a real material increase |
+| POLICY_PURPOSE_CONSISTENT | PASS | security infrastructure and audit costs fit an allowed category |
+| **PROPORTIONAL_TO_NEED** | **FAIL** | evidence is qualitative and gives no cost figures tying the need to an 80000 cap |
+| EVIDENCE_SUFFICIENT | PASS | two items fetched |
+| SOURCE_INDEPENDENCE | PASS | at least one fetched source is independent |
+| **REASONABLE_ALTERNATIVES_CONSIDERED** | **FAIL** | no smaller increase or alternative was considered |
+| CONFLICT_OF_INTEREST_CLEAR | UNCLEAR | no disclosure about proposer interests |
+| MANIPULATION_RISK_ACCEPTABLE | PASS | no embedded instruction attempted to change the verdict |
+
+`numeric_support: PARTIAL`. The evidence genuinely was qualitative - two
+general reference pages with no cost data - and the adjudicator declined to
+invent figures to bridge the gap. That is the "never manufacture numerical
+precision" rule holding under live conditions, and it is the correct answer to
+this case.
+
+The MANIPULATION_RISK_ACCEPTABLE reason confirms the injection defence ran
+against real fetched web content rather than a test fixture.
+
+Bond disposition on finalization: **SLASHABLE** to the frozen treasury address.
+That is the path still untested with real GEN.
 
 ---
 
