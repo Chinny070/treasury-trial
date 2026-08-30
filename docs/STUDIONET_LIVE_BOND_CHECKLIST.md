@@ -146,24 +146,44 @@ slash (REJECTED), confirming the slash lands at the frozen treasury address and
 
 ---
 
-## 9. Open item G - failed outbound transfer
+## 9. Open item G - failed outbound transfer - RESOLVED 2026-08-30
 
-Still open, and now harder: `__on_errored_message__` cannot be used at all
-because that dunder breaks Studio schema extraction. There is no in-contract
-recovery path for a failed transfer.
+Answered with live evidence by `contracts/capability_test/gen_error_hook_probe.py`.
+Probe A `0x712e3f10571992c21689E5123325cad803486532`,
+probe B `0xC23680B622501623EB46684665d03F668a07f8B6`.
 
-- [ ] Settle a case, then `execute_payout` to a recipient that should cause the
-      transfer to fail (for example a contract that rejects value - construct
-      one deliberately as a probe, never as production code).
-- [ ] Confirm the case stays at `PAYOUT_PENDING` with the amount, recipient and
-      disposition intact.
-- [ ] Confirm the contract's on-chain balance still holds the bond. This is the
-      off-chain detection signal: contract balance versus unconfirmed
-      settlements.
-- [ ] Do **not** call `confirm_payout` on it. Confirm that withholding
-      confirmation leaves the entitlement recorded indefinitely.
-- [ ] Confirm no method reopens or re-emits it.
+| Scenario | Result | hook_calls |
+|---|---|---|
+| Insufficient balance (emit 1000 GEN holding 1) | `emit_transfer` raised `SystemError: 7: Imbalance` SYNCHRONOUSLY at the call site. Transaction `Execution Result: ERROR`, `Result Code: Contract Error`, `exit_code 1`. **All state writes rolled back**: status returned to `PAYOUT_READY`, `in_flight` cleared, `total_emitted` back to 0. | **0** |
+| Successful payout to an EOA | SUCCESS, returned the exact amount, GEN delivered | **0** |
+| Payout to a CONTRACT recipient with no `__receive__` | SUCCESS. A separate `Send` transaction FINALIZED and the recipient contract's balance became **1 GEN**. | **0** |
 
-Until a Studio-loadable failure callback or a verified balance accessor exists,
-the operational rule is: **never confirm a payout whose outbound transfer you
-have not seen succeed on the explorer.** Record every transaction hash.
+### Findings
+
+1. **`__on_errored_message__` was never invoked, in any scenario** - including a
+   genuine, deliberately induced transfer failure. There is no live evidence
+   that this callback is delivered at all under GenVM v0.2.16.
+2. **A failed `emit_transfer` raises synchronously and the whole transaction
+   rolls back atomically.** There is therefore no such thing as a payout
+   stranded in `PAYOUT_PENDING` by a funding failure - the attempt simply never
+   happened, and a retry is the first and only emission.
+3. **Contracts can receive native GEN** without implementing `__receive__`.
+   The recipient-rejection failure mode we designed around does not exist here.
+4. The outbound transfer is still a **separate `Send` transaction**, but the
+   funding check happens inline at emit time.
+
+### Consequences
+
+- The callback must NOT be restored. It is unreachable code that can silently
+  mutate bond state - a liability, not a safeguard.
+- The 3600-second `PAYOUT_CONFIRM_DELAY` has no justification. It was guarding
+  against a stranded-pending state that cannot occur.
+- Double payment remains impossible via the terminal status guard, unchanged.
+
+### Residual risk
+
+These tests exercised two failure/success paths. They do not prove that NO
+asynchronous failure mode exists - only that the two we could construct are
+either synchronous-and-atomic or succeed outright. If an async failure mode is
+ever observed, the operational rule stands: withhold `confirm_payout` for any
+payout whose `Send` was not seen to succeed on the explorer.
