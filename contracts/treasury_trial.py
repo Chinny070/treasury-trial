@@ -926,6 +926,18 @@ class TreasuryTrial(gl.Contract):
         Only URLs already frozen into the case are fetched. Nothing the model
         says can cause a fetch. A failed fetch downgrades that item to
         UNAVAILABLE rather than aborting adjudication.
+
+        Uses gl.nondet.web.render, the documented web-content API, wrapped in
+        gl.eq_principle.strict_eq so every validator agrees on the exact bytes
+        before they are placed in the prompt. An earlier revision called
+        gl.get_webpage unwrapped; on live StudioNet on 2026-08-30 that returned
+        UNAVAILABLE for every URL, which made the contract declare the case
+        structurally INVALID before the model was even consulted. render() also
+        drives a real browser, so pages that build their text client-side are
+        retrievable where a raw GET would return an empty shell.
+
+        strict_eq matters as much as the API choice: an unwrapped fetch lets
+        each validator see different bytes, which cannot reach consensus.
         """
         records = self._case_evidence(case_id, True)
         for record in records:
@@ -933,8 +945,17 @@ class TreasuryTrial(gl.Contract):
                 continue
             if record["fetch_status"] == FETCH_FETCHED:
                 continue
+            target = record["source_url"]
+
+            def render_target():
+                return gl.nondet.web.render(target, mode="text")
+
             try:
-                body = gl.get_webpage(record["source_url"], mode="text")
+                body = gl.eq_principle.strict_eq(render_target)
+                if isinstance(body, bytes):
+                    body = body.decode("utf-8", "replace")
+                elif not isinstance(body, str):
+                    body = str(body)
                 record["fetched_excerpt"] = body[:FETCH_SLICE]
                 record["fetch_status"] = FETCH_FETCHED
             except Exception:

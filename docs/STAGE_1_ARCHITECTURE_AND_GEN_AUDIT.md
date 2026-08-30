@@ -62,7 +62,7 @@ from genlayer import *
 | Failed outbound message hook | `__on_errored_message__` — "accepts the refunded value" by default, overridable | **DOCUMENTED — NOT LIVE‑VERIFIED** | docs FAQ |
 | Contract's own native balance | No confirmed accessor observed in local code. `gl.contract.balance` / similar is **UNVERIFIED**. Continuum tracks balances via internal accounting only. | **UNVERIFIED** | — |
 | IC → IC value transfer | Same `emit_transfer` / emitted‑message mechanism, value param | **UNVERIFIED** for Treasury Trial (not needed in V1) | inferred |
-| Web retrieval | `gl.get_webpage(url, mode="text")` → returns page text; slice before use (`[:3000]`) | **CONFIRMED** | contradiction-protocol L158 |
+| Web retrieval | ~~`gl.get_webpage(url, mode="text")`~~ → **RETRACTED 2026-08-30.** Correct API is `gl.nondet.web.render(url, mode="text")` (or `.get`), wrapped in `gl.eq_principle.strict_eq`. | **CORRECTED** | see note below |
 | Nondeterministic LLM | `gl.nondet.exec_prompt(prompt: str) -> str` | **CONFIRMED** | RealityLock L192, contradiction L202 |
 | Comparative equivalence | `gl.eq_principle.prompt_comparative(fn, criteria: str) -> str` | **CONFIRMED** | RealityLock L196, contradiction L207 |
 | Non‑comparative equivalence | `gl.eq_principle.prompt_non_comparative(...)` — documented, two EP types | **DOCUMENTED — NOT LIVE‑VERIFIED** | docs; not used locally |
@@ -71,6 +71,30 @@ from genlayer import *
 | Frontend client | `genlayer-js` → `createClient({ chain: studionet, account, provider })`; `.writeContract({address, functionName, args, value})`, `.readContract(...)`, `.waitForTransactionReceipt({hash, retries})` | **CONFIRMED** | RealityLock `lib/genlayer/client.ts` |
 | Finality states (frontend) | receipt `status` / `statusName` ∈ `ACCEPTED`, `FINALIZED`, `CANCELED`, `UNDETERMINED` | **CONFIRMED** | RealityLock `client.ts` L150‑157 |
 | Chain descriptor | `import { studionet } from 'genlayer-js/chains'` → `studionet.id`, `.nativeCurrency`, `.rpcUrls`, `.blockExplorers` | **CONFIRMED** | RealityLock |
+
+### 1.2b CORRECTION - web retrieval API (2026-08-30)
+
+**The Stage 1 claim that `gl.get_webpage` was CONFIRMED was wrong**, and the error is instructive.
+
+It was marked CONFIRMED because the user's deployed `contradiction-protocol` contract *calls* it. That is evidence the contract deploys - it is **not** evidence the call succeeds. Nobody had ever checked a fetch result. On live StudioNet on 2026-08-30 the Treasury Trial contract called it for two real, public URLs and both came back `UNAVAILABLE`, which drove the case to a structurally `INVALID` verdict.
+
+The documented API is:
+
+```python
+def render_target():
+    return gl.nondet.web.render(url, mode="text")   # or gl.nondet.web.get(url).body
+
+body = gl.eq_principle.strict_eq(render_target)
+```
+
+Source: <https://docs.genlayer.com/developers/intelligent-contracts/examples/fetch-web-content>
+
+Two things were wrong, not one:
+
+1. **The API.** `render` drives a real browser, so pages that build their text client-side are retrievable where a raw fetch returns an empty shell.
+2. **The missing equivalence wrapper.** A web fetch must be wrapped in `strict_eq` so every validator agrees on the exact bytes. An unwrapped fetch lets each validator see different content, which cannot reach consensus.
+
+**Lesson for this audit's own method:** "a deployed contract calls this API" is a weaker form of evidence than it was treated as. It belongs in DOCUMENTED, not CONFIRMED. Only an observed *result* justifies CONFIRMED - the same standard that was correctly applied to native GEN, and incorrectly relaxed here.
 
 ### 1.3 Notable constraints observed
 

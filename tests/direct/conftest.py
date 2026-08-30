@@ -6,8 +6,14 @@ Every test gets a fresh VM (fresh in-memory storage) and a freshly deployed
 (`BASE`) so lifecycle windows are deterministic.
 
 Nondeterminism is mocked, never live:
-  * `vm.mock_web`  supplies frozen page text for `gl.get_webpage`
+  * `vm.mock_web`  supplies frozen page text for `gl.nondet.web.render`
   * `vm.mock_llm`  supplies the adjudicator's JSON for `gl.nondet.exec_prompt`
+
+The harness mocks `render` natively, so tests exercise exactly the API the
+production contract calls. An earlier revision shimmed `gl.get_webpage` into
+the runtime because the local runner lacked it; that API turned out to be the
+wrong one - it returned UNAVAILABLE for every URL on live StudioNet - and the
+shim is gone.
 
 Outbound native GEN
 -------------------
@@ -386,39 +392,6 @@ def current_policy(c, dao_id: str = DAO_ID) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def _install_get_webpage_shim(vm) -> None:
-    """
-    Provide `gl.get_webpage` for direct-mode tests.
-
-    RUNTIME DIVERGENCE, recorded deliberately: the local gltest direct runner
-    extracts py-lib-genlayer-std v0.3.0-rc7, which exposes `gl.nondet.web` and
-    has NO `gl.get_webpage`. The pinned Studio runtime
-    (py-genlayer:1jb45aa8..., GenVM v0.2.16) DOES expose `gl.get_webpage` - it
-    is used by the user's deployed Contradiction Protocol contract, which is
-    the verification basis recorded in Stage 1 section 1.2.
-
-    Production code therefore keeps `gl.get_webpage`, the API verified against
-    the deployment target, and the harness supplies it locally rather than the
-    contract switching to an API this project has never verified. The shim
-    reads the SAME mock registry that `vm.mock_web` populates, so tests
-    exercise the contract's real fetch, slice and failure-handling path.
-    """
-    import genlayer
-
-    def get_webpage(url, mode="text"):
-        mock = vm._match_web_mock(url, "GET")
-        if not mock:
-            raise RuntimeError("no web mock registered for " + str(url))
-        if int(mock.get("status", 200)) >= 400:
-            raise RuntimeError("http status " + str(mock.get("status")))
-        body = mock.get("body", "")
-        if isinstance(body, bytes):
-            body = body.decode("utf-8", "replace")
-        return body
-
-    genlayer.gl.get_webpage = get_webpage
-
-
 @pytest.fixture
 def env():
     """Fresh VM + deployed TreasuryTrial, clock at BASE, transfer capture armed."""
@@ -428,7 +401,6 @@ def env():
     transfers.install(vm)
     with vm.activate():
         contract = deploy_contract(CONTRACT_PATH, vm)
-        _install_get_webpage_shim(vm)
         warp_to(vm, BASE)
         for account in (OWNER, CONTROLLER, PROPOSER, CHALLENGER, OUTSIDER, TREASURY):
             vm.deal(account, 100 * BOND)

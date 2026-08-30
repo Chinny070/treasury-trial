@@ -218,9 +218,11 @@ These are integrity anchors against accidental drift and stale snapshots, **not 
 
 ## 10. Semantic adjudication
 
-Verified APIs only: `gl.get_webpage(url, mode="text")`, `gl.nondet.exec_prompt`, `gl.eq_principle.prompt_comparative`.
+APIs: `gl.nondet.web.render(url, mode="text")` wrapped in `gl.eq_principle.strict_eq`, then `gl.nondet.exec_prompt` under `gl.eq_principle.prompt_comparative`.
 
-- Only URLs **already frozen into the case** are fetched. Nothing the model returns can trigger a fetch, and the prompt forbids inventing or following URLs.
+> **Corrected 2026-08-30.** An earlier revision used `gl.get_webpage` unwrapped. On live StudioNet every fetch returned `UNAVAILABLE`, which drove the case to a structurally `INVALID` verdict before the model was consulted. `render` drives a real browser; `strict_eq` makes all validators agree on the exact bytes. See STAGE_1 section 1.2b.
+
+- Only URLs **already frozen into the case** are fetched, each inside its own `strict_eq` block. Nothing the model returns can trigger a fetch, and the prompt forbids inventing or following URLs.
 - Fetched text is enclosed in `<<<UNTRUSTED_WEB_CONTENT>>>` markers, and the model is told it is data, never instructions - and that an instruction found inside evidence is itself a manipulation signal that fails `MANIPULATION_RISK_ACCEPTABLE`.
 - Fetched text outranks submitter excerpts; a mismatch makes the item unreliable.
 - **Bond size and every economic figure about the stake are excluded from the prompt entirely.** The only numbers shown are the policy values under judgment. Asserted directly against the generated prompt text in `test_bond_size_is_absent_from_the_adjudication_prompt`.
