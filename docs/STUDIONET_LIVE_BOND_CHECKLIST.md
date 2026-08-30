@@ -35,18 +35,29 @@ B.0 - do not guess.
 
 ## 1. Deploy - DONE 2026-08-30
 
-**Deployed at `0xF4D5855c7944d240E7b6DC37a369D6b2Fe6ED514`** on StudioNet.
-Source sha256 `55b1413a0e4622b098afda34b288dcd020601290808ef29f133c0dc2785d9b54`,
-87164 bytes, commit `243d8ad`.
+### Deployment history
+
+| Address | Source sha256 | Commit | Outcome |
+|---|---|---|---|
+| `0xF4D5855c7944d240E7b6DC37a369D6b2Fe6ED514` | `2d82153d…61b7` | `ea8f442` | superseded. First live run exposed two defects: every evidence fetch returned UNAVAILABLE (wrong web API), and adjudication consensus came back `Undetermined` after three validator rotations (equivalence principle too strict). |
+| **`0x7cD15c0d4F4741C2Ce3DD807246b6f13aA7f82A1`** | **`95b6c42d…083e`** | **`30328d5`** | **current.** `gl.nondet.web.render` under `strict_eq`; adjudication on `prompt_non_comparative`. |
 
 - [x] Deploy from your main wallet. No constructor arguments, no value.
 - [x] Record the contract address.
-- [x] `get_config()` returns your address as `owner`, `paused: false`,
+- [ ] `get_config()` returns your address as `owner`, `paused: false`,
       all four counts `0`, and the four frozen vocabularies with lengths
-      8 / 8 / 11 / 9. VERIFIED 2026-08-30: owner
-      `0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b`, all counters 0, all four
-      vocabularies exactly 8 / 8 / 11 / 9. Deployed bytecode matches the
-      tested source.
+      8 / 8 / 11 / 9.
+
+### What this deployment is testing
+
+Two fixes, and the run should be read against both:
+
+1. **Evidence fetch.** `get_case_evidence` after adjudication must show
+   `fetch_status: FETCHED` with non-empty `fetched_excerpt`, not `UNAVAILABLE`.
+2. **Consensus.** The `request_adjudication` transaction must show
+   `Consensus Result: Accepted`, not `Undetermined`.
+
+If either still fails, isolate it before changing anything else.
 
 ---
 
