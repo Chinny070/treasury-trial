@@ -361,3 +361,58 @@ Options for a future revision, none applied yet:
   what happened here and worked.
 
 Observed rate: one `Undetermined` in five adjudications on these two URLs.
+
+### Accepted case completed - refund path and policy v2
+
+`finalize_case` on `c_4` returned `ACCEPTED` and minted **policy v2**.
+
+| | `p_5` (v1) | `p_6` (v2) |
+|---|---|---|
+| `allowed_spending_categories` | `["community events","developer grants"]` | `["community events","developer grants","security"]` |
+| `status` | **SUPERSEDED** | ACTIVE |
+| `previous_policy_id` | `""` | `p_5` |
+| `created_by_case_id` | `""` | **`c_4`** |
+| `policy_hash` | `ba52c0f3a244ef56` | `a31d06ba2e94cc8b` |
+| every other field | - | **identical** |
+
+v1 was not edited. It remains exactly as written, flagged superseded. v2 is a
+new immutable record differing by one category, pointing back to both its
+predecessor and the adjudicated case that justified it. One change per case,
+enforced by the contract rather than trusted to the proposer.
+
+**Refund path proven with real GEN.** `execute_payout` on `c_4` produced
+`Send` tx `0x0bb03f3e…39dd983`, FINALIZED, from the contract
+`0x7cD15c0d…82A1` to the proposer `0xaffE15eEc…E8e70b`, Value **1 GEN**.
+`confirm_payout` returned `REFUNDED` after that Send was observed finalized.
+
+Both dispositions now proven live through the SAME single parameterized payout
+method, differing only in the recipient frozen at finalization:
+
+| Case | Decision | Recipient | Result |
+|---|---|---|---|
+| `c_1` | REJECTED | frozen treasury `0x082a657b…a735` | `SLASHED` |
+| `c_4` | ACCEPTED | proposer `0xaffE15eEc…E8e70b` | `REFUNDED` |
+
+In both, the payout was triggered by the proposer and the recipient was
+determined by frozen case state, not by the caller.
+
+---
+
+## Live checklist status
+
+| Section | Status |
+|---|---|
+| 0. Schema load | PASSED |
+| 1. Deploy | PASSED |
+| 2. Registration and policy | PASSED |
+| 3. Case and real bond | PASSED |
+| 4. Evidence and adjudication | PASSED |
+| 5. Challenge | PASSED |
+| 6. Finalization | PASSED, both REJECTED and ACCEPTED |
+| 7. Payout | PASSED, both slash and refund |
+| 8. Pause | NOT RUN |
+| 9. Open item G | RESOLVED by probe |
+| 10. Accepted amendment | PASSED |
+
+Only pause behaviour remains unexercised live. It is deterministic, has no
+nondeterministic component, and is covered by the test suite.
