@@ -1,0 +1,38 @@
+{
+  "name": "treasury-chamber",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "description": "Treasury Chamber - frontend for Treasury Trial, evidence-backed policy amendment for DAO treasuries on GenLayer",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "genlayer-js": "1.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.5.0",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "eslint": "^9.12.0",
+    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
+    "globals": "^15.11.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9",
+    "vitest": "^2.1.3"
+  }
+}
