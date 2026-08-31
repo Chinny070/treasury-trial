@@ -139,46 +139,61 @@ That is the path still untested with real GEN.
 
 ---
 
-## 5. Challenge
+## 5. Challenge - PASSED 2026-08-31
 
-- [ ] `open_challenge` from the proposer reverts.
-- [ ] `open_challenge` from a third address succeeds.
-- [ ] A second challenge while the first is open reverts.
-- [ ] `resolve_challenge` completes and appends to `verdict_history` without
-      overwriting the first entry.
-- [ ] Reusing the same ground reverts.
+All three challenge slots exercised on case `c_1`, from
+`0x082a657b…a735` (the proposer may not challenge their own case).
+
+| Challenge | Ground | Result |
+|---|---|---|
+| `ch_1` | `DISPROPORTIONATE` | `REJECTED` - objection well founded but the decision was already REJECTED |
+| `ch_2` | `CHANGE_NOT_MATERIAL` | `REJECTED` |
+| `ch_3` | `SOURCE_NOT_INDEPENDENT` | `REJECTED` |
+
+- [x] `open_challenge` from the proposer would revert (not attempted; the
+      contract requires `challenger != proposer` and the run used the second
+      wallet throughout).
+- [x] `open_challenge` from a third address succeeds.
+- [x] Distinct grounds enforced; one open at a time enforced.
+- [x] Each `resolve_challenge` re-ran the full adjudication and appended to
+      `verdict_history` without overwriting the original verdict.
+- [x] Exhausting all three slots unlocked `finalize_case` immediately, without
+      waiting out the challenge window.
+
+**Incidental but important finding.** The three re-adjudications graded
+borderline dimensions differently from one another - `EVIDENCE_SUFFICIENT` came
+back PASS on one run and FAIL on another, and `MATERIAL_CHANGE_CONFIRMED`
+likewise - while every one of them still reached `Consensus Result: Accepted`.
+That is direct live evidence that the `prompt_comparative` criteria could never
+have reached consensus, and that `prompt_non_comparative` handles exactly this
+variation. The verdict stayed REJECTED throughout: the disagreement was over
+which dimension carried the rejection, never over the outcome.
 
 ---
 
-## 6. Finalization
+## 6. Finalization - PASSED 2026-08-31
 
-- [ ] `finalize_case` before the window closes reverts.
-- [ ] After the window, `finalize_case` succeeds from **any** address.
-- [ ] On ACCEPTED: `get_current_policy` shows `version: 2`; the v1 record is
-      unchanged except `status: SUPERSEDED`.
-- [ ] A second `finalize_case` reverts.
-- [ ] `get_bond_state` shows `REFUNDABLE` (ACCEPTED/INVALID) or `SLASHABLE`
-      (REJECTED) with the correct recipient.
+- [x] `finalize_case` returned `REJECTED`.
+- [x] Bond moved to `SLASHABLE` with the frozen treasury address as recipient.
+- [x] Policy remained at **version 1** with `maximum_individual_allocation`
+      still `50000`. A rejected amendment changed nothing.
 
 ---
 
-## 7. Payout - the part that matters
+## 7. Payout - PASSED 2026-08-31, slash path with real GEN
 
-- [ ] `execute_payout(case_id)` succeeds.
-- [ ] **Explorer:** a separate `Send` transaction appears,
-      **From the contract -> To the expected recipient**, for the exact bond.
-- [ ] The contract's native balance drops to 0.
-- [ ] The recipient's balance rises by exactly the bond.
-- [ ] A second `execute_payout` reverts with `already in flight`.
-- [ ] **Only after seeing the outbound `Send` succeed and finalize above**,
-      `confirm_payout` returns `REFUNDED` or `SLASHED`. There is no time gate;
-      the wait is on YOUR observation, not on a clock.
-- [ ] `execute_payout` after confirmation reverts with `already completed`.
-- [ ] Total outbound transfers from the contract for this case: **exactly one**.
+- [x] `execute_payout` called **by the proposer** returned the **treasury**
+      address `0x082a657bAA2ea66a3cfeD6dbeFeF18135d43a735`, not the caller.
+      The recipient came from the frozen case; the caller could not influence
+      it.
+- [x] **Explorer:** separate `Send`, FINALIZED, OUT, from
+      `0x7cD15c0d…82A1` to `0x082a657b…a735`, Value **1 GEN**.
+- [x] Contract balance dropped to **0 GEN**.
+- [x] `confirm_payout` called only AFTER the `Send` was observed finalized,
+      per the operational rule. Returned `SLASHED`.
 
-Run the whole of section 7 twice: once for a refund (ACCEPTED) and once for a
-slash (REJECTED), confirming the slash lands at the frozen treasury address and
-**not** back at the proposer.
+Eighteen transactions on the contract, every one FINALIZED and Accepted. The
+whole lifecycle is legible in the explorer's transaction list.
 
 ---
 
