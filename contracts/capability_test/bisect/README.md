@@ -5,6 +5,13 @@ Diagnostic contracts from the Stage 1 investigation into Studio's
 Each isolates one variable. They are kept as evidence for the conclusions
 recorded in `docs/STAGE_1_ARCHITECTURE_AND_GEN_AUDIT.md` Addendum B.0.
 
+Provenance note: `t4`, `t9` and `t10` are byte-for-byte copies of a native-GEN
+probe written earlier for a different, unrelated GenLayer project by the same
+author. Their comment headers still name that project. They are retained
+**unmodified on purpose**: their exact bytes, including the non-ASCII ones, are
+the evidence for the conclusion below, and rewriting the headers would destroy
+the artifact. Nothing in Treasury Trial depends on, imports, or deploys them.
+
 **These are not deployable production contracts.** `t4`, `t9` and `t10`
 deliberately contain the 16 non-ASCII comment bytes (em dashes and section
 signs) that caused the original failure, so they are intentionally excluded
@@ -16,7 +23,7 @@ from the ASCII guard in `tests/test_source_shape.py`, which scans only
 | `t1_bare.py` | bare contract, u256, view + write | yes |
 | `t2_interface.py` | + `@gl.evm.contract_interface` | yes |
 | `t3_payable_transfer.py` | + payable write, `gl.message.value`, `emit_transfer` | yes |
-| `t4_foresign_probe_verbatim.py` | the FORESIGN probe unchanged | **no** |
+| `t4_foresign_probe_verbatim.py` | the earlier project's probe unchanged | **no** |
 | `t5_add_str_field.py` | + bare `str` storage field, TreeMap, UserError | yes |
 | `t6_owner_in_map.py` | owner in a TreeMap written in `__init__` | yes |
 | `t7_add_jsondumps.py` | + `json.dumps` in a view | yes |

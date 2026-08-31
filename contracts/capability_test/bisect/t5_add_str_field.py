@@ -1,6 +1,7 @@
 # v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
-# T5 = T4 (foresign probe) + one bare `str` storage field. Isolates whether a
+# T5 = T4 (the known-good baseline probe) + one bare `str` storage field.
+# Isolates whether a
 # top-level `str` storage field breaks Studio schema extraction.
 
 from genlayer import *

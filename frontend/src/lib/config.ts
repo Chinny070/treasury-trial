@@ -10,8 +10,45 @@ import { studionet } from "genlayer-js/chains";
 const env = import.meta.env as unknown as Record<string, string | undefined>;
 
 /** Canonical StudioNet deployment of the Treasury Trial protocol core. */
-export const CONTRACT_ADDRESS = (env.VITE_TREASURY_TRIAL_ADDRESS ??
-  "0x7cD15c0d4F4741C2Ce3DD807246b6f13aA7f82A1") as `0x${string}`;
+const CANONICAL_ADDRESS = "0x7cD15c0d4F4741C2Ce3DD807246b6f13aA7f82A1";
+
+/**
+ * Resolve the contract address, loudly.
+ *
+ * An unset override falls back to the canonical deployment above, which is a
+ * real address on StudioNet. An override that is present but empty or
+ * malformed is a configuration mistake, and the app refuses to start rather
+ * than pointing at nothing and rendering what would look like an empty
+ * protocol. There is no fixture or demo mode to fall back to.
+ */
+function resolveContractAddress(): { address: string; error: string | null } {
+  const override = env.VITE_TREASURY_TRIAL_ADDRESS;
+  if (override === undefined) {
+    return { address: CANONICAL_ADDRESS, error: null };
+  }
+  const trimmed = override.trim();
+  if (trimmed === "") {
+    return {
+      address: "",
+      error:
+        "VITE_TREASURY_TRIAL_ADDRESS is set but empty. Set it to a deployed Treasury Trial contract address, or remove it to use the canonical StudioNet deployment.",
+    };
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+    return {
+      address: "",
+      error: `VITE_TREASURY_TRIAL_ADDRESS is not a contract address: "${trimmed}".`,
+    };
+  }
+  return { address: trimmed, error: null };
+}
+
+const resolved = resolveContractAddress();
+
+/** Non-null when the app is misconfigured. main.tsx refuses to render. */
+export const CONFIG_ERROR = resolved.error;
+
+export const CONTRACT_ADDRESS = resolved.address as `0x${string}`;
 
 /** Source fingerprint of the deployed contract, recorded at deploy time. */
 export const CONTRACT_SHA256 =

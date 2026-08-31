@@ -29,9 +29,9 @@ Sources used are listed in [§17](#17-sources).
 
 Three local GenLayer projects were inspected as *verified pattern sources*. Per user memory and project files:
 
-- **Continuum Protocol** — `C:\Users\USERpc\continuum\contracts\continuum_protocol.py`. Memory records it as **deployed to StudioNet at `0xd7F3…f7fe`**. Uses `@gl.public.write.payable`, `gl.message.value`, and **outbound native‑value transfers** via an EVM contract interface. This is the single most important reference for the GEN bond question.
-- **RealityLock** — `C:\Users\USERpc\RealityLock\contracts\reality_lock.py`. Uses `gl.nondet.exec_prompt` + `gl.eq_principle.prompt_comparative` for semantic adjudication; frontend integrates `genlayer-js` against `studionet`.
-- **Contradiction Protocol** — `C:\Users\USERpc\contradiction-protocol\contracts\ContradictionProtocol.py`. Uses `gl.get_webpage(url, mode="text")` for on‑chain web retrieval feeding an LLM prompt.
+- **Continuum Protocol** — a separate, unrelated GenLayer project by the same author, inspected locally and left unmodified. Memory records it as **deployed to StudioNet at `0xd7F3…f7fe`**. Uses `@gl.public.write.payable`, `gl.message.value`, and **outbound native‑value transfers** via an EVM contract interface. This is the single most important reference for the GEN bond question.
+- **RealityLock** — a separate, unrelated GenLayer project by the same author, inspected locally and left unmodified. Uses `gl.nondet.exec_prompt` + `gl.eq_principle.prompt_comparative` for semantic adjudication; frontend integrates `genlayer-js` against `studionet`.
+- **Contradiction Protocol** — a separate, unrelated GenLayer project by the same author, inspected locally and left unmodified. Uses `gl.get_webpage(url, mode="text")` for on‑chain web retrieval feeding an LLM prompt.
 
 All three pin the runtime with the same header:
 
@@ -759,10 +759,10 @@ Note on the rollback: the failed second claim was still *Accepted by consensus a
 
 ## 17. Sources
 
-- Local verified contract: `C:\Users\USERpc\continuum\contracts\continuum_protocol.py` (deployed StudioNet `0xd7F3…f7fe` per user memory) — payable writes, `gl.message.value`, `_Recipient(...).emit_transfer(value=u256(...))`, `pending_settlements` double‑spend pattern.
-- Local verified contract: `C:\Users\USERpc\RealityLock\contracts\reality_lock.py` — `gl.nondet.exec_prompt`, `gl.eq_principle.prompt_comparative`, storage patterns.
-- Local verified contract: `C:\Users\USERpc\contradiction-protocol\contracts\ContradictionProtocol.py` — `gl.get_webpage(url, mode="text")`.
-- Local verified frontend: `C:\Users\USERpc\RealityLock\lib\genlayer\client.ts` — `genlayer-js` client, `studionet` chain, receipt statuses.
+- Local verified contract: Continuum Protocol (deployed StudioNet `0xd7F3…f7fe` per user memory) — payable writes, `gl.message.value`, `_Recipient(...).emit_transfer(value=u256(...))`, `pending_settlements` double‑spend pattern.
+- Local verified contract: RealityLock — `gl.nondet.exec_prompt`, `gl.eq_principle.prompt_comparative`, storage patterns.
+- Local verified contract: Contradiction Protocol — `gl.get_webpage(url, mode="text")`.
+- Local verified frontend: RealityLock's genlayer-js client — `genlayer-js` client, `studionet` chain, receipt statuses.
 - GenLayer docs — Intelligent Contracts intro, FAQ, "Writing to Intelligent Contracts": [docs.genlayer.com](https://docs.genlayer.com/developers/intelligent-contracts/introduction), [docs.genlayer.com/FAQ](https://docs.genlayer.com/FAQ), [docs.genlayer.com/developers/decentralized-applications/writing-data](https://docs.genlayer.com/developers/decentralized-applications/writing-data) — `@gl.public.write.payable`, `gl.message.value`/`sender`, `__receive__`, `__on_errored_message__`, comparative vs non‑comparative equivalence principle.
 - GenLayer SDK API index: [sdk.genlayer.com/main/api/genlayer.html](https://sdk.genlayer.com/main/api/genlayer.html) (referenced; page returned 404 on fetch — **exact signatures for balance accessors still need direct SDK confirmation at Stage 2 start**).
 

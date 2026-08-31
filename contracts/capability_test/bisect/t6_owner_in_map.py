@@ -1,7 +1,8 @@
 # v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
-# T6 = owner stored in a TreeMap written inside __init__ (the deployed Continuum
-# pattern). Isolates whether TreeMap writes in __init__ are the problem.
+# T6 = owner stored in a TreeMap written inside __init__ (the pattern used by a
+# prior contract that deploys). Isolates whether TreeMap writes in __init__ are
+# the problem.
 
 from genlayer import *
 
