@@ -35,9 +35,18 @@ export function CaseExplorer() {
     { enabled: Boolean(daoId) },
   );
 
+  const [error, setError] = useState<string | null>(null);
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    setParams(query.trim() ? { dao: query.trim().toLowerCase() } : {});
+    const next = query.trim().toLowerCase();
+    if (!next) {
+      setError("Enter a DAO identifier first, for example: example-dao");
+      setParams({});
+      return;
+    }
+    setError(null);
+    setParams({ dao: next });
   };
 
   return (
@@ -54,13 +63,17 @@ export function CaseExplorer() {
       <Card>
         <form onSubmit={onSubmit} className="row" style={{ alignItems: "flex-end" }}>
           <div style={{ flex: "1 1 260px" }}>
-            <Field label="DAO identifier">
+            <Field label="DAO identifier" error={error ?? undefined}>
               <input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  if (error) setError(null);
+                }}
                 placeholder="example-dao"
                 autoComplete="off"
                 spellCheck={false}
+                aria-invalid={error ? true : undefined}
               />
             </Field>
           </div>

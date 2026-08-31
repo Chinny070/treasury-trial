@@ -7,6 +7,7 @@
  */
 
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -114,6 +115,29 @@ describe("routes", () => {
     at("/status");
     await waitFor(() => expect(screen.getByText("Wallet")).toBeInTheDocument());
     expect(screen.getByText("unsupported")).toBeInTheDocument();
+  });
+
+  it("says why nothing happened when the DAO lookup is submitted empty", async () => {
+    const user = userEvent.setup();
+    at("/daos");
+    await user.click(screen.getByRole("button", { name: "Open DAO" }));
+    // The button used to return silently here, which read as a dead control.
+    expect(screen.getByText(/enter a dao identifier first/i)).toBeInTheDocument();
+  });
+
+  it("rejects an identifier the contract would not accept, before navigating", async () => {
+    const user = userEvent.setup();
+    at("/daos");
+    await user.type(screen.getByRole("textbox"), "ab");
+    await user.click(screen.getByRole("button", { name: "Open DAO" }));
+    expect(screen.getByText(/3 to 48 characters/i)).toBeInTheDocument();
+  });
+
+  it("says why nothing happened when the case lookup is submitted empty", async () => {
+    const user = userEvent.setup();
+    at("/cases");
+    await user.click(screen.getByRole("button", { name: "Load cases" }));
+    expect(screen.getByText(/enter a dao identifier first/i)).toBeInTheDocument();
   });
 
   it("renders a 404 for an unknown path", () => {

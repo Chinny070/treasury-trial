@@ -30,6 +30,9 @@ import type { Policy } from "../lib/types";
  */
 const RECENT_KEY = "treasury-chamber:recent-daos";
 
+/** The identifier shape the contract itself enforces. */
+export const DAO_ID_PATTERN = /^[a-z0-9._-]{3,48}$/;
+
 function readRecent(): string[] {
   try {
     const raw = window.localStorage.getItem(RECENT_KEY);
@@ -52,14 +55,30 @@ function rememberDao(daoId: string): void {
 export function DaoRegistry() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
 
   useEffect(() => setRecent(readRecent()), []);
 
+  /**
+   * Submitting an empty or malformed identifier used to return silently, which
+   * made the button look broken. Say what is wrong instead.
+   */
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     const daoId = query.trim().toLowerCase();
-    if (daoId) navigate(`/daos/${encodeURIComponent(daoId)}`);
+    if (!daoId) {
+      setError("Enter a DAO identifier first, for example: example-dao");
+      return;
+    }
+    if (!DAO_ID_PATTERN.test(daoId)) {
+      setError(
+        "The contract only accepts 3 to 48 characters: lowercase letters, digits, dot, underscore and hyphen.",
+      );
+      return;
+    }
+    setError(null);
+    navigate(`/daos/${encodeURIComponent(daoId)}`);
   };
 
   return (
@@ -80,13 +99,18 @@ export function DaoRegistry() {
           <Field
             label="DAO identifier"
             hint="Lowercase letters, digits, dot, underscore and hyphen. For example: example-dao"
+            error={error ?? undefined}
           >
             <input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                if (error) setError(null);
+              }}
               placeholder="example-dao"
               autoComplete="off"
               spellCheck={false}
+              aria-invalid={error ? true : undefined}
             />
           </Field>
           <div className="row">
