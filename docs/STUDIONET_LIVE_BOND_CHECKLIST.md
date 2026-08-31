@@ -294,24 +294,70 @@ DAO's own cost evidence - vendor quotes, historical spend, incident reports.
 That is a property of the design working as intended, not a limitation to
 engineer around.
 
-### Open finding: strict_eq on live web content
+### CRITICAL FINDING: `Undetermined` consensus DISCARDS state
 
-The `c_4` adjudication returned `Consensus Result: Undetermined` after three
-rotations, while still executing successfully and writing the correct state.
-Earlier runs on the same URLs reached `Accepted`.
+The `c_4` adjudication at 10:18 returned:
 
-Probable cause: each evidence fetch is wrapped in `gl.eq_principle.strict_eq`,
-which demands **byte-identical** content across validators. Both pages carry
-volatile content - the CISA page lists dated advisories, the Wikipedia article
-carries edit timestamps and a rendering date - so validators fetching moments
-apart can legitimately disagree.
+```
+Execution Result: SUCCESS
+Result Code:      Return
+Return Value:     "ACCEPTED"
+Consensus Result: Undetermined      (Rotation Count 3)
+Status:           FINALIZED
+```
+
+Everything about that transaction reads like success. The verdict was computed,
+all eight dimensions passed, and `ACCEPTED` was returned to the caller.
+
+**None of it was written.** A subsequent `finalize_case` failed with
+`EXPECTED: case is not awaiting finalization`, and `get_verdict` showed:
+
+```
+status:            EVIDENCE_FROZEN
+proposed_decision: ""
+history:           []
+```
+
+**`Undetermined` means the transaction's state changes are discarded**, even
+though execution succeeded and a value was returned. A caller reading only the
+return value would believe the amendment had been accepted when nothing had
+happened at all.
+
+Re-running `request_adjudication` on the same case reached
+`Consensus Result: Accepted` with Rotation Count 0 and near-identical reasoning
+- the verdict is reproducible; the failure was in agreement, not in judgement.
+
+#### Consequences
+
+1. **`Undetermined` must be treated as a failed transaction**, regardless of
+   what `Execution Result` and `Return Value` say. Any frontend or operator
+   procedure must read `Consensus Result` and re-read contract state before
+   believing an outcome. This is a Stage 3 requirement, not a nicety.
+2. **The evidence freeze survived**, because `freeze_evidence` is a separate
+   committed transaction. A test in Stage 2 forced that split, on the reasoning
+   that a rolled-back adjudication must not unfreeze evidence. It held under
+   exactly the condition it was designed for: the case was safely re-adjudicable
+   with its frozen evidence intact and no re-submission required.
+3. **Re-adjudication is the correct recovery** and is already supported: the
+   case stays at `EVIDENCE_FROZEN` and `request_adjudication` can simply be
+   called again.
+
+### Probable cause: `strict_eq` on live web content
+
+Each evidence fetch is wrapped in `gl.eq_principle.strict_eq`, which demands
+**byte-identical** content across validators. Both sources carry volatile
+content - the CISA page lists dated advisories, the Wikipedia article carries
+edit timestamps and a "Page was rendered with Parsoid" line - so validators
+fetching moments apart can legitimately disagree, and no rotation resolves it.
 
 `strict_eq` is right for the *guarantee* (all validators must judge identical
-evidence) but wrong for the *medium* (live pages are not stable). Options for a
-future revision, none applied yet:
+evidence) but wrong for the *medium* (live pages are not stable).
 
-- normalize the fetched text before comparison;
-- use a non-comparative principle for the fetch;
-- accept occasional `Undetermined` and retry.
+Options for a future revision, none applied yet:
 
-Not changed mid-test. Recorded here as the next thing to address.
+- normalize fetched text before comparison (strip dates, timestamps, nav);
+- fetch under a non-comparative principle judging substantive equivalence;
+- keep `strict_eq` and treat occasional `Undetermined` as a retry, which is
+  what happened here and worked.
+
+Observed rate: one `Undetermined` in five adjudications on these two URLs.
