@@ -250,3 +250,68 @@ asynchronous failure mode exists - only that the two we could construct are
 either synchronous-and-atomic or succeed outright. If an async failure mode is
 ever observed, the operational rule stands: withhold `confirm_payout` for any
 payout whose `Send` was not seen to succeed on the explorer.
+
+---
+
+## 10. Accepted amendment - live run, 2026-08-31
+
+Four attempts were needed to produce an ACCEPT, and the three failures were all
+case-design errors on our side rather than protocol faults. They are recorded
+because each one is evidence the adjudicator is not a rubber stamp.
+
+| Case | DAO | Amendment | Result | Gate that failed |
+|---|---|---|---|---|
+| `c_1` | example-dao | cap 50000 -> 80000 | REJECTED | `PROPORTIONAL_TO_NEED` - evidence had no cost figures |
+| `c_2` | example-dao-2 | add `security audits` | REJECTED | `EVIDENCE_SUFFICIENT` - policy already allowed `security`, so the change was redundant |
+| `c_3` | example-dao-4 | add `security` | REJECTED | `POLICY_PURPOSE_CONSISTENT` - the policy description said it funds grants and events **only**, so adding security contradicted its stated purpose |
+| **`c_4`** | **example-dao-5** | **add `security`** | **ACCEPTED** | none - **all eight dimensions PASSED** |
+
+### What made the difference
+
+The `c_4` policy states a **broad purpose** - "funds work necessary to sustain,
+protect and grow the protocol and its community" - while its category list
+simply does not yet include security. That is a coherent, ordinary shape for a
+real policy, and it resolves the bind the earlier attempts kept hitting:
+
+- a policy that already allows security makes the amendment redundant;
+- a policy that explicitly excludes security makes the amendment contradictory;
+- a policy with a broad purpose and an incomplete list has a genuine gap.
+
+The adjudicator's own words: *"Security work aligns with the stated purpose to
+'protect' the protocol and its community"*, and *"Adding one relevant category
+to match the existing policy purpose is a minimal and proportional change."*
+
+It passed all eight dimensions, so it would have been accepted under the full
+8-criteria gate as well. The narrowed gate was not what carried it.
+
+### Lesson for the product
+
+`PROPORTIONAL_TO_NEED` and `EVIDENCE_SUFFICIENT` ask whether the evidence
+justifies *this* change under *this* policy. Generic public reference pages can
+support a change that is about **scope alignment**, but they can never
+establish a specific DAO's **quantified need**. A cap increase requires the
+DAO's own cost evidence - vendor quotes, historical spend, incident reports.
+That is a property of the design working as intended, not a limitation to
+engineer around.
+
+### Open finding: strict_eq on live web content
+
+The `c_4` adjudication returned `Consensus Result: Undetermined` after three
+rotations, while still executing successfully and writing the correct state.
+Earlier runs on the same URLs reached `Accepted`.
+
+Probable cause: each evidence fetch is wrapped in `gl.eq_principle.strict_eq`,
+which demands **byte-identical** content across validators. Both pages carry
+volatile content - the CISA page lists dated advisories, the Wikipedia article
+carries edit timestamps and a rendering date - so validators fetching moments
+apart can legitimately disagree.
+
+`strict_eq` is right for the *guarantee* (all validators must judge identical
+evidence) but wrong for the *medium* (live pages are not stable). Options for a
+future revision, none applied yet:
+
+- normalize the fetched text before comparison;
+- use a non-comparative principle for the fetch;
+- accept occasional `Undetermined` and retry.
+
+Not changed mid-test. Recorded here as the next thing to address.
