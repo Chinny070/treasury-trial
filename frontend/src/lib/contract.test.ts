@@ -20,7 +20,14 @@ vi.mock("genlayer-js", () => ({
   }),
 }));
 
-import { reads, submitWrite, writes, type WriteContext } from "./contract";
+import {
+  PAGE_MAX,
+  policyLineage,
+  reads,
+  submitWrite,
+  writes,
+  type WriteContext,
+} from "./contract";
 
 const ctx: WriteContext = {
   account: "0x1111111111111111111111111111111111111111",
@@ -228,5 +235,24 @@ describe("write builders", () => {
       ["e_1", "e_2"],
     );
     expect(request.args[3]).toBe('["e_1","e_2"]');
+  });
+});
+
+describe("pagination", () => {
+  it("never asks for a page larger than the contract allows", async () => {
+    // The contract caps limit at PAGE_MAX and reverts above it. A reverted
+    // history read renders as "no policy yet" for a DAO that has one, which is
+    // exactly the bug this guards.
+    readContract.mockResolvedValue(JSON.stringify({ total: 2, items: [] }));
+    await policyLineage("example-dao-5");
+    const [call] = readContract.mock.calls;
+    const limit = Number((call?.[0] as { args: string[] }).args[2]);
+    expect(limit).toBeLessThanOrEqual(PAGE_MAX);
+    expect(PAGE_MAX).toBe(50);
+  });
+
+  it("returns an empty lineage rather than throwing when the DAO has none", async () => {
+    readContract.mockResolvedValue(JSON.stringify({ total: 0, items: [] }));
+    await expect(policyLineage("nobody")).resolves.toEqual([]);
   });
 });

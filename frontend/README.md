@@ -165,6 +165,8 @@ explorer is scoped to one DAO. Identifiers you have visited are remembered in
 
 ## Deployment
 
+Live at **https://treasury-trial.vercel.app**, deployed from `frontend/` only.
+
 The build output in `dist/` is fully static. For Vercel:
 
 - Framework preset: **Vite**

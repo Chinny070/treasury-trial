@@ -200,11 +200,18 @@ export function parseVerdict(raw: string | undefined): Verdict | null {
 }
 
 /**
+ * The contract's pagination cap. Asking for more than this reverts, which
+ * readOptional would turn into an empty list: a DAO with a policy would render
+ * as a DAO with none. Never request a larger page.
+ */
+export const PAGE_MAX = 50;
+
+/**
  * Walk the append-only version chain for a DAO, newest first.
  * Falls back to an empty list when the DAO has no policy yet.
  */
 export async function policyLineage(daoId: string): Promise<Policy[]> {
-  const page = await readOptional(() => reads.policyHistory(daoId, 0, 64));
+  const page = await readOptional(() => reads.policyHistory(daoId, 0, PAGE_MAX));
   return page?.items ?? [];
 }
 
