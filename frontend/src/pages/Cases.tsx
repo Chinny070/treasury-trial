@@ -29,7 +29,7 @@ export function CaseExplorer() {
   const cases = useRead(
     () =>
       daoId
-        ? reads.cases(daoId, 0, 50).catch(() => ({ total: 0, items: [] }))
+        ? reads.cases(daoId, 0, 50)
         : Promise.resolve({ total: 0, items: [] }),
     [daoId],
     { enabled: Boolean(daoId) },
@@ -93,9 +93,11 @@ export function CaseExplorer() {
       )}
 
       {daoId && cases.loading && <Loading />}
-      {daoId && cases.error && <ErrorNote error={cases.error} />}
+      {daoId && cases.error && (
+        <ErrorNote error={cases.error} onRetry={cases.reload} />
+      )}
 
-      {daoId && !cases.loading && (cases.data?.items.length ?? 0) === 0 && (
+      {daoId && !cases.loading && !cases.error && (cases.data?.items.length ?? 0) === 0 && (
         <EmptyState title="No cases on this docket">
           <span className="mono">{daoId}</span> has no amendment cases, or the
           identifier is not registered.

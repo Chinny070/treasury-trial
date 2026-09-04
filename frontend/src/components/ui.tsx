@@ -111,11 +111,33 @@ export function Loading({ label = "Reading contract state" }: { label?: string }
   );
 }
 
-export function ErrorNote({ error }: { error: string }) {
+/**
+ * A failed read is reported as a failure. It is never rendered as an empty
+ * result: "we could not reach the contract" and "this case has no evidence"
+ * are different facts, and showing the second for the first is a lie.
+ */
+export function ErrorNote({
+  error,
+  onRetry,
+}: {
+  error: string;
+  onRetry?: () => void;
+}) {
   return (
     <div className="tx tx-error" role="alert">
       <p className="tx-title">Could not read contract state</p>
       <p className="tx-detail">{error}</p>
+      <p className="tx-detail" style={{ marginTop: "0.5rem" }}>
+        This is a read failure, not an empty record. What is stored on-chain is
+        unchanged and unknown to this page.
+      </p>
+      {onRetry && (
+        <p style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+          <button type="button" className="btn btn-small" onClick={onRetry}>
+            Try again
+          </button>
+        </p>
+      )}
     </div>
   );
 }

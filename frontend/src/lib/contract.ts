@@ -13,8 +13,11 @@ import type { GenLayerTransaction, Hash } from "genlayer-js/types";
 import {
   CHAIN,
   CONTRACT_ADDRESS,
+  MAX_PAGE_LIMIT,
   RECEIPT_INTERVAL_MS,
   RECEIPT_RETRIES,
+  REVALIDATE_ATTEMPTS,
+  REVALIDATE_INTERVAL_MS,
 } from "./config";
 import {
   isUserRejection,
@@ -98,6 +101,14 @@ async function readJson<T>(functionName: string, args: string[] = []): Promise<T
   return JSON.parse(raw) as T;
 }
 
+/**
+ * The contract rejects a page limit above its maximum, so a caller asking for
+ * more does not get a big page - it gets a reverted read. Clamp instead.
+ */
+function pageLimit(limit: number): string {
+  return String(Math.min(Math.max(limit, 1), MAX_PAGE_LIMIT));
+}
+
 /** A read that returns a bare string rather than JSON. */
 async function readString(functionName: string, args: string[] = []): Promise<string> {
   const raw = await readClient().readContract({
@@ -145,7 +156,7 @@ export const reads = {
     readJson<Page<Policy>>("get_policy_history", [
       daoId,
       String(offset),
-      String(limit),
+      pageLimit(limit),
     ]),
 
   /** get_case(case_id) */
@@ -157,7 +168,7 @@ export const reads = {
     readJson<Page<AmendmentCase>>("list_cases", [
       daoId,
       String(offset),
-      String(limit),
+      pageLimit(limit),
     ]),
 
   /** get_evidence(evidence_id) */
@@ -169,7 +180,7 @@ export const reads = {
     readJson<Page<EvidenceRecord>>("get_case_evidence", [
       caseId,
       String(offset),
-      String(limit),
+      pageLimit(limit),
     ]),
 
   /** get_challenge(challenge_id) */
@@ -200,18 +211,11 @@ export function parseVerdict(raw: string | undefined): Verdict | null {
 }
 
 /**
- * The contract's pagination cap. Asking for more than this reverts, which
- * readOptional would turn into an empty list: a DAO with a policy would render
- * as a DAO with none. Never request a larger page.
- */
-export const PAGE_MAX = 50;
-
-/**
  * Walk the append-only version chain for a DAO, newest first.
  * Falls back to an empty list when the DAO has no policy yet.
  */
 export async function policyLineage(daoId: string): Promise<Policy[]> {
-  const page = await readOptional(() => reads.policyHistory(daoId, 0, PAGE_MAX));
+  const page = await readOptional(() => reads.policyHistory(daoId, 0, MAX_PAGE_LIMIT));
   return page?.items ?? [];
 }
 
@@ -313,17 +317,16 @@ export async function submitWrite(
       retries: RECEIPT_RETRIES,
     });
   } catch {
-    return { phase: "TIMEOUT", hash };
+    // No receipt arrived in the window. That is not evidence that nothing
+    // landed, so ask the contract before reporting failure.
+    onPhase?.("STATE_REVALIDATING", hash);
+    const landed = await revalidateWithRetries(revalidate);
+    return { phase: landed ? "SUCCESS" : "TIMEOUT", hash };
   }
 
   const receipt = readReceipt(tx);
 
-  // Consensus failed to settle. Nothing was committed. This is NOT a verdict.
-  if (receipt.undetermined) {
-    return { phase: "CONSENSUS_UNDETERMINED", hash, receipt };
-  }
-
-  // The contract itself refused the call.
+  // The contract itself refused the call. State cannot have changed.
   if (receipt.executionErrored) {
     return {
       phase: "EXECUTION_ERROR",
@@ -333,25 +336,51 @@ export async function submitWrite(
     };
   }
 
-  // Never reached a decided state within the window.
+  // Everything else - decided, undetermined, or no decided receipt at all -
+  // is settled by reading the contract, because contract state is the only
+  // authority on what happened. An inconclusive receipt is not evidence that
+  // nothing landed, any more than a returned value is evidence that it did.
+  onPhase?.("STATE_REVALIDATING", hash);
+  const confirmed = await revalidateWithRetries(revalidate);
+
+  if (confirmed) {
+    return { phase: "SUCCESS", hash, receipt };
+  }
+
+  // Not confirmed. Now the receipt decides which honest failure this is.
+  if (receipt.undetermined) {
+    return { phase: "CONSENSUS_UNDETERMINED", hash, receipt };
+  }
   if (!receipt.decided) {
     return { phase: "TIMEOUT", hash, receipt };
   }
+  return { phase: "STATE_MISMATCH", hash, receipt };
+}
 
-  // Decided, and execution reported a return. Still not success: verify.
-  onPhase?.("STATE_REVALIDATING", hash);
-  let confirmed = false;
-  try {
-    confirmed = await revalidate();
-  } catch {
-    confirmed = false;
+/**
+ * Poll the revalidator rather than asking once.
+ *
+ * A single immediate read can run before the node serves the new state, which
+ * turns a successful write into a reported failure. Retrying only delays the
+ * answer; it never invents one, because the revalidator still has to observe
+ * the mutation in contract state.
+ */
+async function revalidateWithRetries(
+  revalidate: Revalidator,
+  attempts = REVALIDATE_ATTEMPTS,
+  delayMs = REVALIDATE_INTERVAL_MS,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      if (await revalidate()) return true;
+    } catch {
+      /* Read failed; treat as not-yet-visible and try again. */
+    }
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
   }
-
-  if (!confirmed) {
-    return { phase: "STATE_MISMATCH", hash, receipt };
-  }
-
-  return { phase: "SUCCESS", hash, receipt };
+  return false;
 }
 
 /* ------------------------------------------------------------------ */

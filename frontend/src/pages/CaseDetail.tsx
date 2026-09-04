@@ -372,7 +372,7 @@ function EvidenceBody({
 }) {
   const caseId = record.case_id;
   const list = useRead(
-    () => reads.caseEvidence(caseId, 0, 50).catch(() => ({ total: 0, items: [] })),
+    () => reads.caseEvidence(caseId, 0, 50),
     [caseId],
   );
   const verdict = parseVerdict(record.current_verdict_json);
@@ -468,7 +468,8 @@ function EvidenceBody({
       </Card>
 
       {list.loading && <Loading />}
-      {!list.loading && total === 0 && (
+      {list.error && <ErrorNote error={list.error} onRetry={listReload} />}
+      {!list.loading && !list.error && total === 0 && (
         <EmptyState title="No evidence submitted">
           Nothing has been filed on this case yet.
         </EmptyState>
@@ -743,7 +744,7 @@ function ChallengeBody({
   const caseId = record.case_id;
   const wallet = useWallet();
   const list = useRead(
-    () => reads.caseChallenges(caseId).catch(() => ({ total: 0, items: [] })),
+    () => reads.caseChallenges(caseId),
     [caseId],
   );
   const listReload = list.reload;
@@ -796,7 +797,8 @@ function ChallengeBody({
       </Card>
 
       {list.loading && <Loading />}
-      {!list.loading && total === 0 && (
+      {list.error && <ErrorNote error={list.error} onRetry={listReload} />}
+      {!list.loading && !list.error && total === 0 && (
         <EmptyState title="No challenges">
           Nobody has disputed the proposed verdict on this case.
         </EmptyState>

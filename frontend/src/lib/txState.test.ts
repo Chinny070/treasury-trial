@@ -64,6 +64,37 @@ describe("readReceipt", () => {
     expect(signals.undetermined).toBe(false);
   });
 
+  it("reads the snake_case receipt genlayer-js actually returns", () => {
+    // The default receipt is SIMPLIFIED, and simplification renames statusName
+    // to status_name. Reading only the camelCase key made every real receipt
+    // parse as "no status", which surfaced as TIMEOUT ("No result yet") on
+    // writes that had finalized on-chain. Live steward review caught this.
+    const signals = receipt({
+      status_name: "FINALIZED",
+      tx_execution_result_name: "FINISHED_WITH_RETURN",
+      num_of_rounds: "1",
+    } as never);
+    expect(signals.statusName).toBe("FINALIZED");
+    expect(signals.decided).toBe(true);
+    expect(signals.undetermined).toBe(false);
+    expect(signals.executionErrored).toBe(false);
+    expect(signals.numOfRounds).toBe("1");
+  });
+
+  it("treats a snake_case UNDETERMINED receipt as undetermined", () => {
+    const signals = receipt({ status_name: "UNDETERMINED" } as never);
+    expect(signals.undetermined).toBe(true);
+    expect(signals.decided).toBe(false);
+  });
+
+  it("treats a snake_case execution error as an error", () => {
+    const signals = receipt({
+      status_name: "FINALIZED",
+      tx_execution_result_name: "FINISHED_WITH_ERROR",
+    } as never);
+    expect(signals.executionErrored).toBe(true);
+  });
+
   it("survives a missing receipt", () => {
     const signals = readReceipt(undefined);
     expect(signals.decided).toBe(false);

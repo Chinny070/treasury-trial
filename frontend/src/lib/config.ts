@@ -65,13 +65,23 @@ export const CHAIN_ID_HEX = `0x${studionet.id.toString(16)}`;
 export const RPC_URL =
   env.VITE_GENLAYER_RPC_URL ?? studionet.rpcUrls.default.http[0] ?? "";
 
+/**
+ * The Studio explorer. The URL carried by the genlayer-js chain definition
+ * (genlayer-explorer.vercel.app) now returns 503, so every transaction link
+ * pointed at a dead host; this is the current one, checked live.
+ */
 export const EXPLORER_URL =
-  env.VITE_GENLAYER_EXPLORER_URL ??
-  studionet.blockExplorers?.default.url ??
-  "https://genlayer-explorer.vercel.app";
+  env.VITE_GENLAYER_EXPLORER_URL ?? "https://explorer-studio.genlayer.com";
 
 export const RECEIPT_RETRIES = Number(env.VITE_RECEIPT_RETRIES ?? 200);
 export const RECEIPT_INTERVAL_MS = Number(env.VITE_RECEIPT_INTERVAL_MS ?? 3000);
+
+/** Post-write state checks: contract state can lag the receipt by a little. */
+export const REVALIDATE_ATTEMPTS = Number(env.VITE_REVALIDATE_ATTEMPTS ?? 10);
+export const REVALIDATE_INTERVAL_MS = Number(env.VITE_REVALIDATE_INTERVAL_MS ?? 3000);
+
+/** Maximum page size the contract's paginated views accept. */
+export const MAX_PAGE_LIMIT = 50;
 
 /** Native GEN has 18 decimals, matching the chain's nativeCurrency. */
 export const GEN_DECIMALS = studionet.nativeCurrency.decimals;
@@ -84,4 +94,4 @@ export const EXPECTED_METHODS = EXPECTED_WRITES + EXPECTED_VIEWS;
 
 export const explorerTx = (hash: string): string => `${EXPLORER_URL}/tx/${hash}`;
 export const explorerAddress = (address: string): string =>
-  `${EXPLORER_URL}/contracts/${address}`;
+  `${EXPLORER_URL}/address/${address}`;

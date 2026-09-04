@@ -181,7 +181,7 @@ export function DaoOverview() {
   const dao = useRead(() => reads.daoOptional(daoId), [daoId]);
   const policy = useRead(() => reads.currentPolicyOptional(daoId), [daoId]);
   const cases = useRead(
-    () => reads.cases(daoId, 0, 50).catch(() => ({ total: 0, items: [] })),
+    () => reads.cases(daoId, 0, 50),
     [daoId],
   );
 
@@ -237,8 +237,18 @@ export function DaoOverview() {
       >
         {policy.loading && <Loading />}
         {!policy.loading && !policy.data && (
-          <EmptyState title="No policy published">
-            The controller has registered this identifier but has not yet created
+          <EmptyState
+            title="No policy published yet"
+            action={
+              <Link className="btn btn-primary" to={`/daos/${daoId}/policy/new`}>
+                Create policy version 1
+              </Link>
+            }
+          >
+            This identifier is registered, but it has no treasury policy, so
+            there is nothing to amend and no case can be opened against it yet.
+            The controller,{" "}
+            <span className="mono">{dao.data?.controller ?? ""}</span>, creates
             version 1.
           </EmptyState>
         )}
@@ -247,7 +257,8 @@ export function DaoOverview() {
 
       <Card title="Amendment cases" eyebrow="Case history">
         {cases.loading && <Loading />}
-        {!cases.loading && (cases.data?.items.length ?? 0) === 0 && (
+        {cases.error && <ErrorNote error={cases.error} onRetry={cases.reload} />}
+        {!cases.loading && !cases.error && (cases.data?.items.length ?? 0) === 0 && (
           <EmptyState title="No amendment cases">
             Nobody has proposed a change to this policy yet.
           </EmptyState>

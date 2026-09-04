@@ -8,6 +8,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("./config", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./config")>()),
+  REVALIDATE_ATTEMPTS: 3,
+  REVALIDATE_INTERVAL_MS: 0,
+}));
+
+import { MAX_PAGE_LIMIT } from "./config";
+
 const readContract = vi.fn();
 const writeContract = vi.fn();
 const waitForTransactionReceipt = vi.fn();
@@ -21,7 +29,6 @@ vi.mock("genlayer-js", () => ({
 }));
 
 import {
-  PAGE_MAX,
   policyLineage,
   reads,
   submitWrite,
@@ -34,11 +41,12 @@ const ctx: WriteContext = {
   provider: { request: vi.fn() },
 };
 
+/** The shape genlayer-js really returns: simplified, and snake_cased. */
 const accepted = {
-  statusName: "ACCEPTED",
-  txExecutionResultName: "FINISHED_WITH_RETURN",
+  status_name: "ACCEPTED",
+  tx_execution_result_name: "FINISHED_WITH_RETURN",
   consensus_data: { final: false },
-  numOfRounds: "1",
+  num_of_rounds: "1",
 };
 
 beforeEach(() => {
@@ -95,11 +103,11 @@ describe("submitWrite", () => {
 
   it("treats Undetermined as a discarded write, not a verdict", async () => {
     waitForTransactionReceipt.mockResolvedValue({
-      statusName: "UNDETERMINED",
-      txExecutionResultName: "FINISHED_WITH_RETURN",
-      numOfRounds: "3",
+      status_name: "UNDETERMINED",
+      tx_execution_result_name: "FINISHED_WITH_RETURN",
+      num_of_rounds: "3",
     });
-    const revalidate = vi.fn();
+    const revalidate = vi.fn().mockResolvedValue(false);
 
     const outcome = await submitWrite(
       ctx,
@@ -108,15 +116,40 @@ describe("submitWrite", () => {
     );
 
     expect(outcome.phase).toBe("CONSENSUS_UNDETERMINED");
-    // Nothing was committed, so there is nothing to revalidate.
-    expect(revalidate).not.toHaveBeenCalled();
+    // State is still consulted: the receipt does not get the final word.
+    expect(revalidate).toHaveBeenCalled();
     expect(outcome.receipt?.numOfRounds).toBe("3");
+  });
+
+  it("believes contract state over an unreadable receipt", async () => {
+    // The steward's writes finalized on-chain while the app said "No result
+    // yet". Whatever the receipt says, if the mutation is in state, it landed.
+    waitForTransactionReceipt.mockResolvedValue({ nothing: "recognisable" });
+    const outcome = await submitWrite(
+      ctx,
+      writes.registerDao("example-dao"),
+      vi.fn().mockResolvedValue(true),
+    );
+    expect(outcome.phase).toBe("SUCCESS");
+  });
+
+  it("retries the state check instead of failing on the first read", async () => {
+    waitForTransactionReceipt.mockResolvedValue(accepted);
+    const revalidate = vi
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    const outcome = await submitWrite(ctx, writes.freezeEvidence("c_1"), revalidate);
+
+    expect(revalidate).toHaveBeenCalledTimes(2);
+    expect(outcome.phase).toBe("SUCCESS");
   });
 
   it("surfaces a contract error with its reason", async () => {
     waitForTransactionReceipt.mockResolvedValue({
-      statusName: "ACCEPTED",
-      txExecutionResultName: "FINISHED_WITH_ERROR",
+      status_name: "ACCEPTED",
+      tx_execution_result_name: "FINISHED_WITH_ERROR",
       consensus_data: { leader_receipt: [{ error: "evidence already frozen" }] },
     });
 
@@ -130,23 +163,33 @@ describe("submitWrite", () => {
     expect(outcome.revertReason).toBe("evidence already frozen");
   });
 
-  it("reports a timeout rather than inventing an outcome", async () => {
+  it("reports a timeout when no receipt arrives and state has not changed", async () => {
+    waitForTransactionReceipt.mockRejectedValue(new Error("timed out"));
+    const outcome = await submitWrite(
+      ctx,
+      writes.finalizeCase("c_1"),
+      vi.fn().mockResolvedValue(false),
+    );
+    expect(outcome.phase).toBe("TIMEOUT");
+    expect(outcome.hash).toBe("0xabc");
+  });
+
+  it("reports success when no receipt arrived but the write did land", async () => {
     waitForTransactionReceipt.mockRejectedValue(new Error("timed out"));
     const outcome = await submitWrite(
       ctx,
       writes.finalizeCase("c_1"),
       vi.fn().mockResolvedValue(true),
     );
-    expect(outcome.phase).toBe("TIMEOUT");
-    expect(outcome.hash).toBe("0xabc");
+    expect(outcome.phase).toBe("SUCCESS");
   });
 
   it("reports a still-pending status as a timeout, not a success", async () => {
-    waitForTransactionReceipt.mockResolvedValue({ statusName: "PENDING" });
+    waitForTransactionReceipt.mockResolvedValue({ status_name: "PENDING" });
     const outcome = await submitWrite(
       ctx,
       writes.finalizeCase("c_1"),
-      vi.fn().mockResolvedValue(true),
+      vi.fn().mockResolvedValue(false),
     );
     expect(outcome.phase).toBe("TIMEOUT");
   });
@@ -240,15 +283,15 @@ describe("write builders", () => {
 
 describe("pagination", () => {
   it("never asks for a page larger than the contract allows", async () => {
-    // The contract caps limit at PAGE_MAX and reverts above it. A reverted
+    // The contract caps limit at MAX_PAGE_LIMIT and reverts above it. A reverted
     // history read renders as "no policy yet" for a DAO that has one, which is
     // exactly the bug this guards.
     readContract.mockResolvedValue(JSON.stringify({ total: 2, items: [] }));
     await policyLineage("example-dao-5");
     const [call] = readContract.mock.calls;
     const limit = Number((call?.[0] as { args: string[] }).args[2]);
-    expect(limit).toBeLessThanOrEqual(PAGE_MAX);
-    expect(PAGE_MAX).toBe(50);
+    expect(limit).toBeLessThanOrEqual(MAX_PAGE_LIMIT);
+    expect(MAX_PAGE_LIMIT).toBe(50);
   });
 
   it("returns an empty lineage rather than throwing when the DAO has none", async () => {

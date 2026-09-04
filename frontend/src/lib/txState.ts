@@ -126,18 +126,36 @@ const UNDETERMINED_STATUSES = new Set([
 /** Statuses that mean the transaction settled and state may have been written. */
 const DECIDED_STATUSES = new Set(["ACCEPTED", "FINALIZED"]);
 
+/**
+ * Read the first key that is actually present.
+ *
+ * genlayer-js returns a SIMPLIFIED receipt by default, and simplification
+ * renames some fields: `statusName` arrives as `status_name`. Reading only the
+ * camelCase spelling made every real receipt parse as "no status", which the
+ * state machine then reported as TIMEOUT - "No result yet" - on writes that had
+ * in fact finalized on-chain. Accept both spellings.
+ */
+function pick(raw: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "string" && value !== "") return value;
+  }
+  return undefined;
+}
+
 export function readReceipt(tx: GenLayerTransaction | undefined): ReceiptSignals {
   const raw = (tx ?? {}) as Record<string, unknown>;
-  const statusName =
-    typeof raw.statusName === "string" ? raw.statusName : undefined;
-  const executionResultName =
-    typeof raw.txExecutionResultName === "string"
-      ? raw.txExecutionResultName
-      : undefined;
+  const statusName = pick(raw, "statusName", "status_name");
+  const executionResultName = pick(
+    raw,
+    "txExecutionResultName",
+    "tx_execution_result_name",
+    "txExecutionResult_name",
+  );
 
   const consensus = raw.consensus_data as { final?: boolean } | undefined;
-  const lastRound = raw.lastRound as
-    | { rotationsLeft?: string }
+  const lastRound = (raw.lastRound ?? raw.last_round) as
+    | { rotationsLeft?: string; rotations_left?: string }
     | undefined;
 
   const undetermined = statusName ? UNDETERMINED_STATUSES.has(statusName) : false;
@@ -148,8 +166,8 @@ export function readReceipt(tx: GenLayerTransaction | undefined): ReceiptSignals
     statusName,
     executionResultName,
     consensusFinal: consensus?.final,
-    numOfRounds: typeof raw.numOfRounds === "string" ? raw.numOfRounds : undefined,
-    rotationsLeft: lastRound?.rotationsLeft,
+    numOfRounds: pick(raw, "numOfRounds", "num_of_rounds"),
+    rotationsLeft: lastRound?.rotationsLeft ?? lastRound?.rotations_left,
     undetermined,
     executionErrored,
     decided,
