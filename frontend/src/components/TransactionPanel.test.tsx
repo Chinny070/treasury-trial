@@ -8,6 +8,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { WalletProvider } from "../hooks/useWallet";
+import { EvidenceCard } from "./protocol";
 import { TransactionPanel, WriteGate } from "./TransactionPanel";
 import type { TxState } from "../lib/txState";
 
@@ -114,5 +115,39 @@ describe("WriteGate", () => {
     expect(screen.queryByText("Lock bond")).toBeNull();
     expect(screen.getByText(/no wallet detected/i)).toBeInTheDocument();
     expect(document.body.textContent).toMatch(/remain readable/i);
+  });
+});
+
+describe("EvidenceCard fetch status", () => {
+  const base = {
+    evidence_id: "e_9",
+    case_id: "c_6",
+    challenge_id: "",
+    submitter: "0x1111111111111111111111111111111111111111",
+    category: "INFRA_REQUIREMENT" as const,
+    title: "A source",
+    source_url: "https://example.org/a",
+    url_normalised: "https://example.org/a",
+    source_host: "example.org",
+    excerpt: "",
+    claim: "It says a thing.",
+    independence_declared: "INDEPENDENT" as const,
+    affiliation_note: "",
+    image_not_machine_verified: false,
+    fetched_excerpt: "",
+    submitted_at: 1,
+  };
+
+  it("does not call an unfetched source unretrievable", () => {
+    // Live: a freshly submitted source showed "not retrievable on-chain"
+    // before adjudication had ever tried to fetch it.
+    render(<EvidenceCard record={{ ...base, fetch_status: "NOT_ATTEMPTED" }} />);
+    expect(screen.queryByText(/not retrievable/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/not fetched yet/i)).toBeInTheDocument();
+  });
+
+  it("does say unretrievable once a fetch has actually failed", () => {
+    render(<EvidenceCard record={{ ...base, fetch_status: "UNAVAILABLE" }} />);
+    expect(screen.getByText(/not retrievable/i)).toBeInTheDocument();
   });
 });

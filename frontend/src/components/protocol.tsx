@@ -146,6 +146,11 @@ export function EvidenceCard({
   unverified?: boolean;
 }) {
   const fetched = record.fetch_status === "FETCHED";
+  // NOT_ATTEMPTED and UNAVAILABLE are different facts: one means the fetch has
+  // not run yet, the other means it ran and failed. Saying "not retrievable"
+  // for both tells a proposer their good source is broken before it has been
+  // tried once.
+  const unattempted = record.fetch_status === "NOT_ATTEMPTED";
   return (
     <article className="evidence-card">
       <div className="evidence-head stack-tight">
@@ -156,8 +161,12 @@ export function EvidenceCard({
           <div className="row" style={{ gap: "0.375rem" }}>
             {decisive && <Badge tone="info">Decisive</Badge>}
             {unverified && <Badge tone="caution">Unverified</Badge>}
-            <Badge tone={fetched ? "positive" : "caution"}>
-              {fetched ? "Fetched on-chain" : record.fetch_status.replace(/_/g, " ")}
+            <Badge tone={fetched ? "positive" : unattempted ? "neutral" : "caution"}>
+              {fetched
+                ? "Fetched on-chain"
+                : unattempted
+                  ? "Awaiting fetch"
+                  : "Unavailable"}
             </Badge>
           </div>
         </div>
@@ -231,7 +240,14 @@ export function EvidenceCard({
           </details>
         )}
 
-        {!fetched && (
+        {unattempted && (
+          <p className="small muted">
+            Not fetched yet. Validators retrieve this source when adjudication
+            runs; until then it carries no evidentiary weight either way.
+          </p>
+        )}
+
+        {!fetched && !unattempted && (
           <p className="small muted">
             This source was not retrievable on-chain, so it is unverified and
             cannot count toward the independent-source requirement.
