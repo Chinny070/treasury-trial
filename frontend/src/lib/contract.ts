@@ -200,6 +200,9 @@ export const reads = {
   verdictOptional: (caseId: string) => readOptional(() => reads.verdict(caseId)),
 };
 
+/** The contract's per-case challenge cap; reaching it also unlocks finalize. */
+export const MAX_CHALLENGES_PER_CASE = 3;
+
 /** Parse the nested verdict JSON a case carries, if any. */
 export function parseVerdict(raw: string | undefined): Verdict | null {
   if (!raw) return null;

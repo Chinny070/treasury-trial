@@ -154,3 +154,108 @@ describe("routes", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+const VERDICT_PROPOSED_CASE = {
+  case_id: "c_7",
+  dao_id: "example-dao-6",
+  policy_id: "p_8",
+  policy_version: 1,
+  policy_hash: "abc",
+  proposer: "0x2222222222222222222222222222222222222222",
+  target_field: "allowed_spending_categories.add",
+  old_value: '["a"]',
+  proposed_value: "security",
+  numeric_delta: "",
+  rationale: "Because.",
+  frozen_criteria: ["POLICY_PURPOSE_CONSISTENT"],
+  frozen_required_categories: [],
+  frozen_min_evidence: 2,
+  frozen_min_independent: 1,
+  frozen_challenge_window: 3600,
+  frozen_evidence_window: 3600,
+  treasury_address: "0x3333333333333333333333333333333333333333",
+  bond_amount: "10000000000000000",
+  created_at: 1,
+  evidence_window_ends: 2,
+  // Closed long ago.
+  challenge_window_ends: 1000,
+  status: "VERDICT_PROPOSED",
+  evidence_frozen: true,
+  frozen_evidence_ids: ["e_11", "e_12"],
+  evidence_fingerprint: "ff",
+  current_verdict_json: "",
+  proposed_decision: "ACCEPTED",
+  decision_reason: "",
+  verdict_history: [{ source: "ADJUDICATION", decision: "ACCEPTED", reason: "" }],
+  final_decision: "",
+  resulting_policy_id: "",
+  finalized_at: 0,
+};
+
+describe("finalization is offered when the contract would accept it", () => {
+  it("offers Finalize on an uncontested VERDICT_PROPOSED case with a closed window", async () => {
+    // finalize_case accepts VERDICT_PROPOSED as well as CHALLENGE_WINDOW, and
+    // CHALLENGE_WINDOW only exists once someone challenges. Gating the button
+    // on CHALLENGE_WINDOW hid it from every uncontested case.
+    readContract.mockImplementation(({ functionName }: { functionName: string }) => {
+      if (functionName === "get_case")
+        return Promise.resolve(JSON.stringify(VERDICT_PROPOSED_CASE));
+      if (functionName === "get_case_challenges")
+        return Promise.resolve(JSON.stringify({ total: 0, items: [] }));
+      return Promise.reject(new Error("not found"));
+    });
+
+    at("/cases/c_7");
+    // The button itself sits behind the wallet gate; the action card is what
+    // proves the app considers this case finalizable.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /available actions/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/finalizing writes the final decision/i)).toBeInTheDocument();
+  });
+
+  it("explains the wait instead of hiding everything while the window is open", async () => {
+    readContract.mockImplementation(({ functionName }: { functionName: string }) => {
+      if (functionName === "get_case")
+        return Promise.resolve(
+          JSON.stringify({
+            ...VERDICT_PROPOSED_CASE,
+            challenge_window_ends: Math.floor(Date.now() / 1000) + 3600,
+          }),
+        );
+      if (functionName === "get_case_challenges")
+        return Promise.resolve(JSON.stringify({ total: 0, items: [] }));
+      return Promise.reject(new Error("not found"));
+    });
+
+    at("/cases/c_7");
+    await waitFor(() =>
+      expect(screen.getByText(/challenge window is still open/i)).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText(/finalizing writes the final decision/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers the challenge form on a VERDICT_PROPOSED case, not only after one exists", async () => {
+    readContract.mockImplementation(({ functionName }: { functionName: string }) => {
+      if (functionName === "get_case")
+        return Promise.resolve(
+          JSON.stringify({
+            ...VERDICT_PROPOSED_CASE,
+            challenge_window_ends: Math.floor(Date.now() / 1000) + 3600,
+          }),
+        );
+      if (functionName === "get_case_challenges")
+        return Promise.resolve(JSON.stringify({ total: 0, items: [] }));
+      return Promise.reject(new Error("not found"));
+    });
+
+    at("/cases/c_7/challenge");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /raise a challenge/i })).toBeInTheDocument(),
+    );
+  });
+});

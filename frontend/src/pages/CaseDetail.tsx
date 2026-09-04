@@ -9,7 +9,13 @@
 
 import { useCallback, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Link, NavLink, useParams } from "react-router-dom";
-import { parseVerdict, reads, revalidators, writes } from "../lib/contract";
+import {
+  MAX_CHALLENGES_PER_CASE,
+  parseVerdict,
+  reads,
+  revalidators,
+  writes,
+} from "../lib/contract";
 import { useRead, useWriteFlow } from "../hooks/useContract";
 import { useWallet } from "../hooks/useWallet";
 import {
@@ -173,6 +179,10 @@ function ChamberBody({
   const wallet = useWallet();
   const isProposer =
     wallet.account?.toLowerCase() === record.proposer.toLowerCase();
+  const challenges = useRead(
+    () => reads.caseChallenges(record.case_id),
+    [record.case_id],
+  );
   const withdraw = useWriteFlow(reload);
   const finalize = useWriteFlow(reload);
 
@@ -184,10 +194,30 @@ function ChamberBody({
     (record.status === "DRAFT" || record.status === "EVIDENCE_OPEN") &&
     !record.evidence_frozen;
 
+  /*
+   * finalize_case accepts VERDICT_PROPOSED as well as CHALLENGE_WINDOW, and
+   * CHALLENGE_WINDOW is only ever set by open_challenge. Gating the button on
+   * CHALLENGE_WINDOW alone made it unreachable for every uncontested case: the
+   * verdict was in, the window had closed, and the UI offered nothing.
+   */
+  const awaitingFinalization =
+    (record.status === "VERDICT_PROPOSED" ||
+      record.status === "CHALLENGE_WINDOW") &&
+    record.final_decision === "" &&
+    record.proposed_decision !== "";
+
+  const challengeList = challenges.data?.items ?? [];
+  const openChallenge = challengeList.find((c) => c.status === "OPEN");
+  // remainingSeconds() returns null for an elapsed deadline, never 0, so
+  // "closed" is null-with-a-deadline-set, not a non-positive number.
+  const windowClosed =
+    record.challenge_window_ends > 0 && challengeLeft === null;
+  const challengesExhausted = challengeList.length >= MAX_CHALLENGES_PER_CASE;
+
   const canFinalize =
-    record.status === "CHALLENGE_WINDOW" &&
-    challengeLeft !== null &&
-    challengeLeft <= 0;
+    awaitingFinalization &&
+    !openChallenge &&
+    (windowClosed || challengesExhausted);
 
   return (
     <>
@@ -289,6 +319,16 @@ function ChamberBody({
           </p>
         )}
       </Card>
+
+      {awaitingFinalization && !canFinalize && (
+        <Card title="Not ready to finalize" eyebrow="Case control">
+          <p className="small muted" style={{ marginBottom: 0 }}>
+            {openChallenge
+              ? `Challenge ${openChallenge.challenge_id} is still open. It must be resolved before this case can be finalized.`
+              : `The challenge window is still open. Anyone but the proposer may dispute this verdict until it closes, in ${formatCountdown(challengeLeft)}.`}
+          </p>
+        </Card>
+      )}
 
       {(canWithdraw || canFinalize) && (
         <Card title="Available actions" eyebrow="Case control">
@@ -763,8 +803,16 @@ function ChallengeBody({
   const isProposer =
     wallet.account?.toLowerCase() === record.proposer.toLowerCase();
   const windowLeft = remainingSeconds(record.challenge_window_ends);
+  /*
+   * open_challenge accepts VERDICT_PROPOSED too. Requiring CHALLENGE_WINDOW
+   * here meant the form only appeared once somebody had already challenged,
+   * which nobody could do through this UI.
+   */
   const windowOpen =
-    record.status === "CHALLENGE_WINDOW" && windowLeft !== null && windowLeft > 0;
+    (record.status === "VERDICT_PROPOSED" ||
+      record.status === "CHALLENGE_WINDOW") &&
+    windowLeft !== null &&
+    windowLeft > 0;
 
   const total = list.data?.total ?? 0;
   const unresolved = list.data?.items.filter((c) => c.status === "OPEN") ?? [];
